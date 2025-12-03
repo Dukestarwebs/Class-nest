@@ -1,13 +1,13 @@
 
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect } from 'react';
 import { User } from '../types';
-import { ADMIN_EMAIL } from '../constants';
+import { findUserByUsername, getAdminProfile, getUsers } from '../data';
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, pass: string) => Promise<User | null>;
-  logout: () => void;
-  register: (name: string, email: string, pass: string) => Promise<User | null>;
+  login: (identifier: string, pass: string) => Promise<User | null>;
+  logout: () => Promise<void>;
+  updateUser: (user: User) => void;
   loading: boolean;
 }
 
@@ -17,87 +17,93 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const initializeAuth = useCallback(() => {
-    try {
-      const storedUser = sessionStorage.getItem('classNestUser');
-      if (storedUser) {
-        setUser(JSON.parse(storedUser));
-      }
-    } catch (error) {
-      console.error("Failed to parse user from session storage", error);
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    const initAuth = async () => {
+        try {
+            const storedUserStr = localStorage.getItem('classNestUser');
+            if (storedUserStr) {
+                const storedUser = JSON.parse(storedUserStr);
+                
+                if (storedUser.role === 'admin') {
+                    // Ensure we have latest admin details
+                    const adminProfile = getAdminProfile();
+                    const updatedAdmin: User = {
+                        ...storedUser,
+                        name: adminProfile.name,
+                        username: adminProfile.username,
+                        email: adminProfile.email,
+                        isApproved: true
+                    };
+                    setUser(updatedAdmin);
+                } else {
+                    // Verify user still exists in database and is approved
+                    const allUsers = await getUsers();
+                    const exists = allUsers.find(u => u.id === storedUser.id);
+                    if (exists && exists.isApproved) {
+                        setUser(exists);
+                    } else {
+                        // User deleted or unapproved
+                        localStorage.removeItem('classNestUser');
+                        setUser(null);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error("Failed to restore session", error);
+            localStorage.removeItem('classNestUser');
+        } finally {
+            setLoading(false);
+        }
+    };
+    initAuth();
   }, []);
 
-  useEffect(() => {
-    initializeAuth();
-  }, [initializeAuth]);
+  const login = async (identifier: string, pass: string): Promise<User | null> => {
+    const normalizedIdentifier = identifier.trim();
+    const adminProfile = getAdminProfile();
+    
+    // Admin check (Username)
+    if (normalizedIdentifier === adminProfile.username && pass === adminProfile.password) {
+        const adminUser: User = {
+            id: 'admin-user',
+            name: adminProfile.name,
+            username: adminProfile.username,
+            email: adminProfile.email,
+            role: 'admin',
+            isApproved: true
+        };
+        localStorage.setItem('classNestUser', JSON.stringify(adminUser));
+        setUser(adminUser);
+        return adminUser;
+    }
 
-  const login = async (email: string, pass: string): Promise<User | null> => {
-    // This simulates an API call
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        if (email === ADMIN_EMAIL && pass === 'classnest123') {
-          const adminUser: User = { id: 'admin-01', name: 'Teacher Sylvia', email: ADMIN_EMAIL, role: 'admin' };
-          sessionStorage.setItem('classNestUser', JSON.stringify(adminUser));
-          setUser(adminUser);
-          resolve(adminUser);
-          return;
+    // Student check (Username)
+    const existingUser = await findUserByUsername(normalizedIdentifier);
+    
+    if (existingUser && existingUser.role === 'student' && existingUser.password === pass) {
+        if (!existingUser.isApproved) {
+             throw new Error("Your account is pending approval by the admin. Please wait for approval and try again later.");
         }
+        localStorage.setItem('classNestUser', JSON.stringify(existingUser));
+        setUser(existingUser);
+        return existingUser;
+    }
 
-        const users: User[] = JSON.parse(localStorage.getItem('classNestUsers') || '[]');
-        const foundUser = users.find(u => u.email === email && u.password === pass);
-
-        if (foundUser) {
-          const loggedInUser = { ...foundUser };
-          delete loggedInUser.password;
-          sessionStorage.setItem('classNestUser', JSON.stringify(loggedInUser));
-          setUser(loggedInUser);
-          resolve(loggedInUser);
-        } else {
-          resolve(null);
-        }
-      }, 500);
-    });
+    throw new Error('Invalid credentials. Please check your username and password.');
   };
 
-  const register = async (name: string, email: string, pass: string): Promise<User | null> => {
-     return new Promise((resolve) => {
-        setTimeout(() => {
-            const users: User[] = JSON.parse(localStorage.getItem('classNestUsers') || '[]');
-            if (users.some(u => u.email === email) || email === ADMIN_EMAIL) {
-                resolve(null); // User already exists
-                return;
-            }
-
-            const newUser: User = {
-                id: `user-${Date.now()}`,
-                name,
-                email,
-                password: pass,
-                role: 'student',
-            };
-            users.push(newUser);
-            localStorage.setItem('classNestUsers', JSON.stringify(users));
-            
-            const loggedInUser = {...newUser};
-            delete loggedInUser.password;
-            sessionStorage.setItem('classNestUser', JSON.stringify(loggedInUser));
-            setUser(loggedInUser);
-
-            resolve(loggedInUser);
-        }, 500);
-     });
-  };
-
-  const logout = () => {
+  const logout = async () => {
     setUser(null);
-    sessionStorage.removeItem('classNestUser');
+    localStorage.removeItem('classNestUser');
   };
   
+  const updateUser = (updatedUser: User) => {
+      setUser(updatedUser);
+      localStorage.setItem('classNestUser', JSON.stringify(updatedUser));
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, register, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, updateUser, loading }}>
       {children}
     </AuthContext.Provider>
   );
