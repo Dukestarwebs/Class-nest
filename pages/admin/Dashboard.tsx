@@ -1,123 +1,80 @@
-
 import React, { useState, useEffect } from 'react';
-import { BookOpen, Megaphone, Users, HelpCircle, ClipboardList, AlertCircle } from 'lucide-react';
-import { getStudents, getNotes, getAnnouncements, getQuestions, getAssignments } from '../../data';
-
-interface StatCardProps {
-  title: string;
-  value: number | string;
-  icon: React.ReactNode;
-  color: string;
-}
-
-const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color }) => (
-    <div className={`${color} p-6 rounded-xl shadow-lg flex items-center space-x-4 transition-transform transform hover:-translate-y-1 text-white h-32`}>
-      <div className="p-4 rounded-full bg-white/25">
-        {icon}
-      </div>
-      <div>
-        <p className="text-lg font-medium opacity-90">{title}</p>
-        <p className="text-4xl font-bold font-poppins">{value}</p>
-      </div>
-    </div>
-  );
+import { User, DollarSign, UserCheck, Briefcase, Book, ArrowRight } from 'lucide-react';
+import { getStudents, getTeachers, getPendingUsers, getAllPayments } from '../../data';
+import { useNavigate } from 'react-router-dom';
 
 const AdminDashboard: React.FC = () => {
-    const [stats, setStats] = useState({ students: 0, notes: 0, announcements: 0, unansweredQuestions: 0, assignments: 0 });
+    const [stats, setStats] = useState({ students: 0, teachers: 0, pending: 0, revenue: 0 });
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-
-    // Helper to safely extract error message
-    const getErrorMessage = (err: any) => {
-        if (!err) return 'Unknown error';
-        if (typeof err === 'string') return err;
-        if (err instanceof Error) return err.message;
-        
-        if (typeof err === 'object') {
-            if ('message' in err) {
-                return typeof err.message === 'object' ? JSON.stringify(err.message) : String(err.message);
-            }
-            if ('error_description' in err) {
-                return typeof err.error_description === 'object' ? JSON.stringify(err.error_description) : String(err.error_description);
-            }
-            if ('details' in err) {
-                return typeof err.details === 'object' ? JSON.stringify(err.details) : String(err.details);
-            }
-        }
-        
-        try {
-            const json = JSON.stringify(err);
-            if (json !== '{}') return json;
-        } catch {
-            // ignore
-        }
-        
-        return 'Failed to load dashboard data.';
-    };
+    const navigate = useNavigate();
 
     useEffect(() => {
         const fetchData = async () => {
-            setError('');
+            setLoading(true);
             try {
-                const [students, notesList, announcements, questions, assignments] = await Promise.all([
-                    getStudents(),
-                    getNotes(),
-                    getAnnouncements(),
-                    getQuestions(),
-                    getAssignments()
+                const [students, teachers, pendingUsers, payments] = await Promise.all([
+                    getStudents(), getTeachers(), getPendingUsers(), getAllPayments()
                 ]);
-
-                const unansweredQuestions = questions.filter(q => !q.isAnswered);
+                const monthlyRevenue = payments
+                    .filter(p => p.status === 'completed' && new Date(p.date).getMonth() === new Date().getMonth())
+                    .reduce((sum, p) => sum + p.amount, 0);
 
                 setStats({
                     students: students.length,
-                    notes: notesList.length,
-                    announcements: announcements.length,
-                    unansweredQuestions: unansweredQuestions.length,
-                    assignments: assignments.length
+                    teachers: teachers.length,
+                    pending: pendingUsers.length,
+                    revenue: monthlyRevenue
                 });
-                
-            } catch (err) {
-                console.error("Error fetching dashboard data:", err);
-                setError(getErrorMessage(err));
+            } catch (error) {
+                console.error("Failed to load dashboard stats", error);
             } finally {
                 setLoading(false);
             }
         };
-
         fetchData();
     }, []);
 
     if (loading) {
-      return (
-        <div className="flex items-center justify-center h-full">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-        </div>
-      );
+        return <div className="flex justify-center items-center h-full"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-primary"></div></div>;
     }
 
     return (
         <div className="space-y-8">
             <h1 className="text-4xl font-poppins font-bold text-text-primary dark:text-white">Admin Dashboard</h1>
-            
-            {error && (
-                <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-r shadow-sm flex items-start dark:bg-red-900/20 dark:text-red-300 dark:border-red-600">
-                    <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" />
-                    <div>
-                        <p className="font-bold">Error loading dashboard</p>
-                        <p className="text-sm">{error}</p>
-                    </div>
-                </div>
-            )}
-
-            {/* Grid updated to max 3 columns for rectangular look on wide screens */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <StatCard title="Total Students" value={stats.students} icon={<Users className="h-8 w-8 text-white" />} color="bg-blue-500" />
-                <StatCard title="Total Notes" value={stats.notes} icon={<BookOpen className="h-8 w-8 text-white" />} color="bg-green-500" />
-                <StatCard title="Assignments" value={stats.assignments} icon={<ClipboardList className="h-8 w-8 text-white" />} color="bg-orange-500" />
-                <StatCard title="Announcements" value={stats.announcements} icon={<Megaphone className="h-8 w-8 text-white" />} color="bg-yellow-500" />
-                <StatCard title="Unanswered" value={stats.unansweredQuestions} icon={<HelpCircle className="h-8 w-8 text-white" />} color="bg-purple-500" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <StatCard title="Total Students" value={stats.students} icon={<User size={28}/>} color="blue" path="/admin/students" />
+                <StatCard title="Total Teachers" value={stats.teachers} icon={<Briefcase size={28}/>} color="purple" path="/admin/teachers"/>
+                <StatCard title="Pending Approvals" value={stats.pending} icon={<UserCheck size={28}/>} color="yellow" path="/admin/pending"/>
+                <StatCard title="Monthly Revenue (UGX)" value={stats.revenue.toLocaleString()} icon={<DollarSign size={28}/>} color="green" path="/admin/payments"/>
             </div>
+            
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md">
+                <h2 className="text-xl font-bold mb-4 flex items-center"><Book size={20} className="mr-2 text-primary"/> Quick Links</h2>
+                <div className="flex flex-wrap gap-4">
+                    <button onClick={() => navigate('/admin/pending')} className="bg-primary text-white font-semibold px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors">Manage Approvals</button>
+                    <button onClick={() => navigate('/admin/notes')} className="bg-gray-200 dark:bg-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">Upload Notes</button>
+                    <button onClick={() => navigate('/admin/announcements')} className="bg-gray-200 dark:bg-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">Send Announcement</button>
+                    <button onClick={() => navigate('/admin/settings')} className="bg-gray-200 dark:bg-gray-700 font-semibold px-4 py-2 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors">System Settings</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const StatCard = ({ title, value, icon, color, path }: { title: string, value: string | number, icon: React.ReactNode, color: string, path: string }) => {
+    const navigate = useNavigate();
+    return (
+        <div className={`bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md border-l-4 border-${color}-500 group transition-all hover:shadow-lg hover:-translate-y-1`}>
+            <div className="flex justify-between items-start">
+                <div>
+                    <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">{title}</p>
+                    <p className="text-3xl font-bold text-text-primary dark:text-white mt-2">{value}</p>
+                </div>
+                <div className={`text-${color}-500`}>{icon}</div>
+            </div>
+            <button onClick={() => navigate(path)} className="flex items-center text-xs mt-4 text-primary font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                View More <ArrowRight size={14} className="ml-1" />
+            </button>
         </div>
     );
 };

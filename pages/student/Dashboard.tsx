@@ -1,700 +1,522 @@
 
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { Announcement, Note, Question, Assignment, Subject } from '../../types';
+import { Note, Subject, Assignment, Announcement, Question } from '../../types';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Search, History, Send, MessageSquare, Book, Eye, ClipboardList, Calendar, AlertCircle, Megaphone, HelpCircle, Settings as SettingsIcon, Menu, X, BookOpen, Calculator, Microscope, Binary, Globe, ArrowRight, ArrowLeft, LifeBuoy } from 'lucide-react';
-import { getAnnouncements, getNotes, getQuestionsByStudent, addQuestion, getAssignments } from '../../data';
-
-type Tab = 'Announcements' | 'Assignments' | 'Notes' | 'Questions';
+import { 
+  LogOut, 
+  Book, 
+  ClipboardList, 
+  Megaphone, 
+  HelpCircle, 
+  Settings as SettingsIcon, 
+  Menu, 
+  X, 
+  BookOpen, 
+  Calculator, 
+  Microscope, 
+  Globe, 
+  History as HistoryIcon,
+  MessageCircle,
+  FileText,
+  User as UserIcon,
+  ChevronRight,
+  Search,
+  Send,
+  Bell,
+  Clock,
+  RefreshCw,
+  CreditCard,
+  AlertTriangle,
+  Wallet,
+  MessageSquare,
+  Video
+} from 'lucide-react';
+import { getNotes, getAssignments, getAnnouncements, getQuestionsByStudent, addQuestion, getSystemSettings } from '../../data';
+import ChatRoom from '../ChatRoom';
 
 const StudentDashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  // Changed default tab to 'Notes' as requested
-  const [activeTab, setActiveTab] = useState<Tab>('Notes');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
-  const [questions, setQuestions] = useState<Question[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [newQuestion, setNewQuestion] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  // selectedSubject: 'All' means showing the subject cards. Specific subject means showing lists.
-  const [selectedSubject, setSelectedSubject] = useState<Subject | 'All'>('All');
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'notes' | 'assignments' | 'announcements' | 'questions' | 'chat'>('notes');
+  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
+  const [subscriptionFee, setSubscriptionFee] = useState<number>(10000);
 
-  const fetchData = async () => {
+  const fetchData = async (showSync = false) => {
     if (!user) return;
-    setLoading(true);
+    if (showSync) setSyncing(true);
+    else setLoading(true);
+
     try {
-        const [annList, allNotes, studentQuestions, allAssignments] = await Promise.all([
-             getAnnouncements(),
-             getNotes(),
-             getQuestionsByStudent(user.id),
-             getAssignments()
-        ]);
+      const [allNotes, allAssignments, allAnnouncements, allQuestions, settings] = await Promise.all([
+        getNotes(),
+        getAssignments(),
+        getAnnouncements(),
+        getQuestionsByStudent(user.id),
+        getSystemSettings()
+      ]);
 
-        const sortedAnnouncements = annList.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        const filteredAnnouncements = sortedAnnouncements.filter(ann => ann.classLevel === 'All' || ann.classLevel === user.classLevel);
-        setAnnouncements(filteredAnnouncements);
+      setSubscriptionFee(settings.studentFee);
 
-        const studentNotes = allNotes.filter(n => n.classLevel === user.classLevel);
-        const sortedNotes = studentNotes.sort((a,b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
-        setNotes(sortedNotes);
-
-        const sortedQuestions = studentQuestions.sort((a,b) => new Date(a.questionDate).getTime() - new Date(b.questionDate).getTime());
-        setQuestions(sortedQuestions);
-
-        const studentAssignments = allAssignments.filter(a => a.classLevel === user.classLevel);
-        const sortedAssignments = studentAssignments.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-        setAssignments(sortedAssignments);
-
+      const studentClass = user.classLevel?.toString().toUpperCase() || '';
+      
+      setNotes(allNotes.filter(n => 
+        (n.classLevel?.toString().toUpperCase() === studentClass) && !n.isArchived
+      ));
+      
+      setAssignments(allAssignments.filter(a => 
+        (a.classLevel?.toString().toUpperCase() === studentClass) && !a.isArchived
+      ));
+      
+      setAnnouncements(allAnnouncements.filter(ann => 
+        ann.classLevel === 'All' || ann.classLevel?.toString().toUpperCase() === studentClass
+      ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+      
+      setQuestions(allQuestions.sort((a, b) => new Date(b.questionDate).getTime() - new Date(a.questionDate).getTime()));
     } catch (error) {
-        console.error("Failed to fetch data:", error);
+      console.error("Failed to fetch dashboard data:", error);
     } finally {
-        setLoading(false);
+      setLoading(false);
+      setSyncing(false);
     }
   };
 
   useEffect(() => {
-    if(user) {
-        fetchData();
-    }
+    fetchData();
   }, [user]);
 
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login');
+  const handleManualSync = () => {
+      fetchData(true);
   };
 
   const handleSendQuestion = async () => {
     if (!newQuestion.trim() || !user) return;
-
-    const question: Omit<Question, 'id'> = {
+    try {
+      await addQuestion({
         studentId: user.id,
         studentName: user.name,
         questionText: newQuestion,
         questionDate: new Date().toISOString(),
         isAnswered: false,
-    };
-    
-    try {
-        await addQuestion(question);
-        setNewQuestion('');
-        fetchData(); // Refetch to show the new question
+      });
+      setNewQuestion('');
+      fetchData(true);
     } catch (error) {
-        console.error("Failed to send question:", error);
+      console.error(error);
     }
   };
 
-  
-  const filteredNotes = useMemo(() => {
-    if (activeTab !== 'Notes') return [];
-    if (selectedSubject === 'All') return []; 
-    
-    return notes.filter(note => {
-      if (note.subject !== selectedSubject) return false;
-      if (searchTerm.trim() === '') return true;
-      const lowerCaseSearch = searchTerm.toLowerCase();
-      const titleMatch = note.title.toLowerCase().includes(lowerCaseSearch);
-      const contentMatch = note.content.toLowerCase().includes(lowerCaseSearch);
-      return titleMatch || contentMatch;
-    });
-  }, [notes, searchTerm, activeTab, selectedSubject]);
+  const getCount = (subject: Subject, type: 'notes' | 'assignments') => {
+    if (type === 'notes') return notes.filter(n => n.subject === subject).length;
+    return assignments.filter(a => a.subject === subject).length;
+  };
 
-  const filteredAssignments = useMemo(() => {
-    if (activeTab !== 'Assignments') return [];
-    if (selectedSubject === 'All') return [];
-
-    return assignments.filter(assign => {
-        if (assign.subject !== selectedSubject) return false;
-        if (searchTerm.trim() === '') return true;
-        const lowerCaseSearch = searchTerm.toLowerCase();
-        const contentMatch = assign.content.toLowerCase().includes(lowerCaseSearch);
-        return contentMatch;
-    });
-  }, [assignments, searchTerm, activeTab, selectedSubject]);
-
-  const navItems = [
-    { id: 'Notes', icon: Book, label: 'My Notes' },
-    { id: 'Assignments', icon: ClipboardList, label: 'Assignments' },
-    { id: 'Announcements', icon: Megaphone, label: 'Announcements' },
-    { id: 'Questions', icon: HelpCircle, label: 'My Questions' },
+  const subjectConfig = [
+    { name: Subject.Mathematics, icon: <Calculator size={24} />, color: 'bg-blue-600', subject: Subject.Mathematics },
+    { name: Subject.English, icon: <Book size={24} />, color: 'bg-red-600', subject: Subject.English },
+    { name: Subject.Physics, icon: <Microscope size={24} />, color: 'bg-purple-600', subject: Subject.Physics },
+    { name: Subject.Chemistry, icon: <Microscope size={24} />, color: 'bg-purple-600', subject: Subject.Chemistry },
+    { name: Subject.Biology, icon: <Microscope size={24} />, color: 'bg-purple-600', subject: Subject.Biology },
+    { name: Subject.History, icon: <HistoryIcon size={24} />, color: 'bg-orange-600', subject: Subject.History },
+    { name: Subject.Geography, icon: <Globe size={24} />, color: 'bg-green-600', subject: Subject.Geography },
+    { name: Subject.Entrepreneurship, icon: <BookOpen size={24} />, color: 'bg-teal-600', subject: Subject.Entrepreneurship },
   ];
 
-  const SubjectIcon = ({ subject, className }: { subject: Subject | string, className?: string }) => {
-    const size = 24; 
-    switch (subject) {
-        case Subject.History: return <History size={size} className={className} />;
-        case Subject.Geography: return <Globe size={size} className={className} />;
-        case Subject.Mathematics: return <Calculator size={size} className={className} />;
-        case Subject.Physics: 
-        case Subject.Chemistry:
-        case Subject.Biology:
-        case Subject.Science:
-            return <Microscope size={size} className={className} />;
-        case Subject.ICT:
-            return <Binary size={size} className={className} />;
-        case Subject.English:
-            return <BookOpen size={size} className={className} />;
-        default: return <Book size={size} className={className} />;
+  const sidebarItems = [
+    { id: 'notes', label: 'My Notes', icon: <BookOpen size={20} />, active: activeTab === 'notes' },
+    { id: 'assignments', label: 'Assignments', icon: <ClipboardList size={20} />, active: activeTab === 'assignments' },
+    { id: 'chat', label: 'Class Chat', icon: <MessageSquare size={20} />, active: activeTab === 'chat' },
+    { id: 'live', label: 'Live Class', icon: <Video size={20} />, active: false },
+    { id: 'announcements', label: 'Announcements', icon: <Megaphone size={20} />, active: activeTab === 'announcements' },
+    { id: 'questions', label: 'My Questions', icon: <HelpCircle size={20} />, active: activeTab === 'questions' },
+    { id: 'subscription', label: 'Subscription', icon: <CreditCard size={20} />, active: false },
+    { id: 'help', label: 'Help & Feedback', icon: <MessageCircle size={20} />, active: false },
+    { id: 'settings', label: 'Settings', icon: <SettingsIcon size={20} />, active: false },
+  ];
+
+  const handleSidebarClick = (id: string) => {
+    if (id === 'help') navigate('/student/help');
+    else if (id === 'settings') navigate('/student/settings');
+    else if (id === 'subscription') navigate('/student/subscription');
+    else if (id === 'live') navigate('/student/live');
+    else {
+      setActiveTab(id as any);
+      setSelectedSubject(null);
     }
+    setIsSidebarOpen(false);
   };
 
-  // Helper to get color for subject cards
-  const getSubjectColor = (subject: Subject | string) => {
-    switch (subject) {
-        case Subject.Mathematics: return 'bg-blue-500';
-        case Subject.English: return 'bg-red-500';
-        case Subject.Science:
-        case Subject.Physics:
-        case Subject.Chemistry:
-        case Subject.Biology: return 'bg-purple-500';
-        case Subject.History:
-        case Subject.SocialStudies: return 'bg-orange-500';
-        case Subject.Geography: return 'bg-green-500';
-        case Subject.ICT: return 'bg-indigo-500';
-        case Subject.ReligiousEducation: return 'bg-yellow-500';
-        case Subject.Entrepreneurship: return 'bg-teal-500';
-        case Subject.Vocational: return 'bg-pink-500';
-        case Subject.Art: return 'bg-rose-500';
-        default: return 'bg-gray-500';
-    }
-  };
-
-  const getAvailableSubjects = () => {
-      if (!user?.classLevel) return [];
-      const isPrimary = ['P6', 'P7'].includes(user.classLevel);
-      
-      if (isPrimary) {
-          return [
-              Subject.Mathematics,
-              Subject.English,
-              Subject.Science,
-              Subject.SocialStudies,
-              Subject.ReligiousEducation
-          ];
-      } else {
-          return [
-              Subject.Mathematics,
-              Subject.English,
-              Subject.Physics,
-              Subject.Chemistry,
-              Subject.Biology,
-              Subject.History,
-              Subject.Geography,
-              Subject.Entrepreneurship
-          ];
-      }
-  };
-
-  const availableSubjects = getAvailableSubjects();
-
-  const renderContent = () => {
-    if(loading) {
-        return (
-            <div className="flex justify-center items-center py-20">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-            </div>
-        )
-    }
-    switch (activeTab) {
-      case 'Announcements':
-        return (
-          <div className="space-y-6">
-            {announcements.length > 0 ? announcements.map(ann => (
-              <div 
-                key={ann.id} 
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border-l-4 border-primary overflow-hidden hover:shadow-xl transition-shadow"
-              >
-                <div className="p-6">
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="flex items-center space-x-3">
-                            <div className="bg-primary/10 p-2 rounded-full text-primary">
-                                <Megaphone size={24} />
-                            </div>
-                            <div>
-                                <h3 className="font-bold text-lg text-gray-800 dark:text-white font-poppins">{ann.sender}</h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400">{new Date(ann.date).toLocaleDateString()} at {new Date(ann.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                            </div>
-                        </div>
-                        <span className="text-xs font-bold uppercase tracking-wide bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 px-3 py-1 rounded-full">
-                            {ann.classLevel === 'All' ? 'Everyone' : ann.classLevel}
-                        </span>
-                    </div>
-                    <div className="pl-2">
-                        <p className="text-gray-700 dark:text-gray-200 text-lg leading-relaxed">{ann.message}</p>
-                    </div>
-                </div>
-              </div>
-            )) : (
-                 <div className="flex flex-col items-center justify-center py-20 text-gray-400 dark:text-gray-500 bg-white dark:bg-gray-800 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700">
-                    <Megaphone className="w-16 h-16 mb-4 opacity-50" />
-                    <p className="text-xl font-medium">No announcements yet</p>
-                    <p className="text-sm mt-2">Check back later for updates from your teachers.</p>
-                </div>
-            )}
-          </div>
-        );
-      case 'Assignments':
-        if (selectedSubject === 'All') {
-            return (
-                <>
-                    <div className="mb-6">
-                        <h2 className="text-xl font-semibold dark:text-white">Assignments Library</h2>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Select a subject to view assignments</p>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {availableSubjects.map((subj) => {
-                            const assignCount = assignments.filter(a => a.subject === subj).length;
-                            return (
-                                <div 
-                                    key={subj}
-                                    onClick={() => setSelectedSubject(subj)}
-                                    className={`${getSubjectColor(subj)} p-6 rounded-xl shadow-lg flex items-center space-x-4 transition-transform transform hover:-translate-y-1 cursor-pointer text-white group`}
-                                >
-                                    <div className="p-3 rounded-full bg-white/25 group-hover:bg-white/30 transition-colors">
-                                        <SubjectIcon subject={subj} className="text-white" />
-                                    </div>
-                                    <div>
-                                        <p className="text-lg font-bold font-poppins">{subj}</p>
-                                        <p className="text-sm opacity-90">{assignCount} {assignCount === 1 ? 'Assignment' : 'Assignments'}</p>
-                                    </div>
-                                    <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <ArrowRight size={20} />
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </>
-            );
-        } else {
-             return (
-                <>
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                        <button 
-                            onClick={() => setSelectedSubject('All')}
-                            className="flex items-center text-gray-600 dark:text-gray-300 hover:text-primary dark:hover:text-primary font-medium transition-colors"
-                        >
-                            <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-full mr-2">
-                                <ArrowLeft size={20} />
-                            </div>
-                            Back to Subjects
-                        </button>
-                        
-                        <div className="relative w-full sm:w-auto sm:min-w-[300px]">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18}/>
-                            <input 
-                              type="text" 
-                              placeholder={`Search assignments...`}
-                              value={searchTerm}
-                              onChange={e => setSearchTerm(e.target.value)}
-                              className="w-full pl-10 pr-4 py-2.5 border rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-text-primary dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-sm"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl mb-6 flex items-center">
-                        <div className={`p-2 rounded-lg ${getSubjectColor(selectedSubject)} text-white mr-3`}>
-                             <SubjectIcon subject={selectedSubject} className="w-5 h-5" />
-                        </div>
-                        <h2 className="text-xl font-bold text-text-primary dark:text-white">{selectedSubject} Assignments</h2>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                         {filteredAssignments.length > 0 ? filteredAssignments.map(assign => {
-                            const dueDate = new Date(assign.dueDate);
-                            const isOverdue = dueDate.getTime() < Date.now();
-                            const isDueSoon = dueDate.getTime() - Date.now() < 24 * 60 * 60 * 1000 && !isOverdue;
-
-                            return (
-                                <div 
-                                    key={assign.id} 
-                                    onClick={() => navigate(`/student/assignments/${assign.id}`)}
-                                    className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden cursor-pointer hover:shadow-md transition-shadow group flex flex-col h-full"
-                                >
-                                    <div className="p-5 flex-grow flex flex-col">
-                                        <div className="flex justify-between items-center mb-3">
-                                            <div className="flex items-center gap-2">
-                                                <span className="bg-gray-100 text-gray-600 text-[10px] font-bold px-2 py-1 rounded dark:bg-gray-700 dark:text-gray-400">
-                                                    {assign.classLevel || 'N/A'}
-                                                </span>
-                                                {isOverdue && <span className="flex items-center text-xs font-bold text-red-500"><AlertCircle size={12} className="mr-1"/> Overdue</span>}
-                                                {isDueSoon && <span className="flex items-center text-xs font-bold text-orange-500"><AlertCircle size={12} className="mr-1"/> Due Soon</span>}
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="bg-secondary dark:bg-gray-900/50 p-4 rounded-lg mb-3 relative overflow-hidden flex-grow">
-                                            <p className="text-gray-800 dark:text-gray-200 text-base line-clamp-3 font-medium">{assign.content}</p>
-                                            <div className="absolute bottom-0 left-0 w-full h-8 bg-gradient-to-t from-secondary dark:from-[#1a202c] to-transparent"></div>
-                                        </div>
-
-                                        <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 mt-auto">
-                                            <Calendar size={16} className="mr-2 text-primary" />
-                                            <span className="font-medium">Due: </span>
-                                            <span className="ml-1">{dueDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                                        </div>
-                                    </div>
-                                    <div className="bg-gray-50 dark:bg-gray-700/50 px-5 py-3 border-t border-gray-100 dark:border-gray-700">
-                                        <span className="text-xs font-bold text-primary flex items-center justify-center group-hover:underline">
-                                            View Details <ArrowRight size={12} className="ml-1"/>
-                                        </span>
-                                    </div>
-                                </div>
-                            );
-                        }) : (
-                            <div className="col-span-full py-16 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
-                                <ClipboardList className="w-16 h-16 mb-4 opacity-50" />
-                                <p className="text-lg">No assignments for {selectedSubject}.</p>
-                            </div>
-                        )}
-                    </div>
-                </>
-            );
-        }
-      case 'Questions':
-        return (
-            <>
-                <div className="space-y-6 pb-24">
-                    <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-4 text-center">
-                         <h3 className="font-poppins font-semibold text-lg text-primary dark:text-blue-300 mb-1">Your Questions</h3>
-                         <p className="text-sm text-gray-600 dark:text-gray-400">Ask your teacher anything about the subjects.</p>
-                    </div>
-
-                    {questions.length > 0 ? questions.map(q => (
-                        <div key={q.id} className="space-y-4">
-                            <div className="flex justify-end">
-                                <div className="max-w-lg">
-                                    <div className="bg-primary text-white p-3 rounded-t-2xl rounded-bl-2xl shadow-md">
-                                        <p>{q.questionText}</p>
-                                    </div>
-                                    <p className="text-xs text-gray-400 dark:text-gray-500 text-right mt-1 pr-2">{new Date(q.questionDate).toLocaleString()}</p>
-                                </div>
-                            </div>
-
-                            {q.isAnswered && q.answerText ? (
-                                <div className="flex justify-start">
-                                    <div className="max-w-lg">
-                                        <div className="bg-white dark:bg-gray-800 text-text-primary dark:text-gray-200 p-3 rounded-t-2xl rounded-br-2xl shadow-md border border-gray-100 dark:border-gray-700">
-                                            <p className="font-semibold text-primary text-sm mb-1">Teacher's Reply</p>
-                                            <p>{q.answerText}</p>
-                                        </div>
-                                        {q.answerDate && <p className="text-xs text-gray-400 dark:text-gray-500 text-left mt-1 pl-2">{new Date(q.answerDate).toLocaleString()}</p>}
-                                    </div>
-                                </div>
-                            ) : (
-                               <div className="flex justify-start">
-                                    <div className="max-w-lg">
-                                        <div className="bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 p-2 px-3 rounded-full text-xs italic">
-                                            <p>Sent. Waiting for reply...</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )) : (
-                        <div className="text-center text-gray-500 dark:text-gray-400 py-10">
-                            <MessageSquare className="mx-auto h-12 w-12 text-gray-400 dark:text-gray-600" />
-                            <p className="mt-2">You haven't asked any questions yet.</p>
-                        </div>
-                    )}
-                </div>
-                
-                <div className="fixed bottom-0 right-0 left-0 md:left-64 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm p-4 border-t border-gray-200 dark:border-gray-800 shadow-[0_-4px_20px_rgba(0,0,0,0.05)] z-30 transition-all duration-300">
-                    <div className="max-w-4xl mx-auto">
-                        <div className="flex gap-2 items-end">
-                            <textarea 
-                                value={newQuestion}
-                                onChange={(e) => setNewQuestion(e.target.value)}
-                                placeholder="Type your question for the teacher..."
-                                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none bg-gray-50 dark:bg-gray-800 text-text-primary dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-                                rows={1}
-                                style={{ minHeight: '3rem', maxHeight: '8rem' }}
-                            />
-                            <button 
-                                onClick={handleSendQuestion} 
-                                className="bg-primary text-white font-bold p-3 rounded-lg hover:bg-blue-600 transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
-                                aria-label="Send question"
-                                disabled={!newQuestion.trim()}
-                            >
-                                <Send size={20}/>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </>
-        );
-      case 'Notes':
-        if (selectedSubject === 'All') {
-            return (
-                <>
-                    <div className="mb-6">
-                        <h2 className="text-xl font-semibold dark:text-white">Subject Libraries</h2>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Select a subject to view notes</p>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {availableSubjects.map((subj) => {
-                            const noteCount = notes.filter(n => n.subject === subj).length;
-                            return (
-                                <div 
-                                    key={subj}
-                                    onClick={() => setSelectedSubject(subj)}
-                                    className={`${getSubjectColor(subj)} p-6 rounded-xl shadow-lg flex items-center space-x-4 transition-transform transform hover:-translate-y-1 cursor-pointer text-white group`}
-                                >
-                                    <div className="p-3 rounded-full bg-white/25 group-hover:bg-white/30 transition-colors">
-                                        <SubjectIcon subject={subj} className="text-white" />
-                                    </div>
-                                    <div>
-                                        <p className="text-lg font-bold font-poppins">{subj}</p>
-                                        <p className="text-sm opacity-90">{noteCount} {noteCount === 1 ? 'Note' : 'Notes'}</p>
-                                    </div>
-                                    <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <ArrowRight size={20} />
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </>
-            );
-        } else {
-            return (
-                <>
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                        <button 
-                            onClick={() => setSelectedSubject('All')}
-                            className="flex items-center text-gray-600 dark:text-gray-300 hover:text-primary dark:hover:text-primary font-medium transition-colors"
-                        >
-                            <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded-full mr-2">
-                                <ArrowLeft size={20} />
-                            </div>
-                            Back to Subjects
-                        </button>
-                        
-                        <div className="relative w-full sm:w-auto sm:min-w-[300px]">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18}/>
-                            <input 
-                              type="text" 
-                              placeholder={`Search notes...`}
-                              value={searchTerm}
-                              onChange={e => setSearchTerm(e.target.value)}
-                              className="w-full pl-10 pr-4 py-2.5 border rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-text-primary dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-sm"
-                            />
-                        </div>
-                    </div>
-
-                    <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl mb-6 flex items-center">
-                        <div className={`p-2 rounded-lg ${getSubjectColor(selectedSubject)} text-white mr-3`}>
-                             <SubjectIcon subject={selectedSubject} className="w-5 h-5" />
-                        </div>
-                        <h2 className="text-xl font-bold text-text-primary dark:text-white">{selectedSubject} Notes</h2>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {filteredNotes.length > 0 ? filteredNotes.map(note => (
-                        <div 
-                            key={note.id} 
-                            className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm flex flex-col justify-between transition-shadow hover:shadow-xl border border-transparent dark:border-gray-700"
-                        >
-                            <div>
-                                <div className="flex items-center justify-between mb-3">
-                                    <div className="flex items-center text-primary font-bold">
-                                        <h3 className="text-lg line-clamp-1" title={note.title}>{note.title}</h3>
-                                    </div>
-                                    <span className="bg-gray-100 text-gray-600 text-[10px] font-bold px-2 py-0.5 rounded dark:bg-gray-700 dark:text-gray-400">
-                                        {note.classLevel}
-                                    </span>
-                                </div>
-                            <div className="bg-secondary dark:bg-gray-900/50 p-3 rounded-lg mb-4 relative overflow-hidden h-24">
-                                <p className="text-sm text-gray-600 dark:text-gray-300 line-clamp-3 font-mono">{note.content}</p>
-                                <div className="absolute bottom-0 left-0 w-full h-8 bg-gradient-to-t from-secondary dark:from-[#1a202c] to-transparent"></div>
-                            </div>
-                            <p className="text-xs text-gray-400">Posted: {new Date(note.uploadDate).toLocaleDateString()}</p>
-                            </div>
-                            <button
-                            onClick={() => navigate(`/student/notes/${note.id}`)}
-                            className="mt-4 w-full flex items-center justify-center bg-white dark:bg-gray-700 border-2 border-primary text-primary dark:text-white px-4 py-2 rounded-lg hover:bg-primary hover:text-white transition-colors font-semibold"
-                            >
-                            <Eye className="mr-2 h-4 w-4" />
-                            Read Note
-                            </button>
-                        </div>
-                        )) : (
-                            <div className="col-span-full py-12 text-center text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
-                                <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                                <p>No notes found for {selectedSubject}.</p>
-                            </div>
-                        )}
-                    </div>
-                </>
-            );
-        }
-    }
-  };
+  const expiryDate = user?.subscription_expiry ? new Date(user.subscription_expiry) : new Date(0);
+  const now = new Date();
+  const diffTime = expiryDate.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const isExpired = diffDays <= 0;
+  const isNearingExpiry = !isExpired && diffDays <= 3;
 
   return (
-    <div className="flex h-screen bg-secondary dark:bg-gray-900 overflow-hidden transition-colors duration-200">
-      {/* Mobile Overlay */}
+    <div className="flex h-screen bg-bg-main text-white transition-colors duration-200 overflow-hidden font-roboto">
+      {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
 
       {/* Sidebar */}
-      <aside className={`
-        fixed md:static inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 shadow-lg flex flex-col h-full
-        transform transition-transform duration-300 ease-in-out
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-      `}>
-         {/* Sidebar Header */}
-         <div className="p-6 flex justify-between items-center">
-            <div className="flex items-center space-x-3">
-                <div className="bg-primary text-white p-2 rounded-lg">
-                    <Book className="w-6 h-6" />
-                </div>
-                <span className="text-2xl font-poppins font-bold text-primary">Class Nest</span>
-            </div>
-            <button 
-                onClick={() => setIsSidebarOpen(false)}
-                className="md:hidden text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 focus:outline-none"
-            >
-                <X size={24} />
-            </button>
+      <aside className={`fixed md:static inset-y-0 left-0 z-50 w-72 bg-bg-card border-r border-border-main flex flex-col h-full transform transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+        <div className="p-8 flex items-center space-x-3 group cursor-pointer" onClick={() => navigate('/')}>
+          <div className="bg-primary text-white p-2 rounded-lg shadow-primary/20 shadow-lg">
+            <Book className="w-6 h-6" />
+          </div>
+          <span className="text-2xl font-poppins font-bold text-white tracking-tight">Class Nest</span>
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-grow space-y-2 px-4 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700">
-            {navItems.map((item) => (
-                <button
-                    key={item.id}
-                    onClick={() => {
-                        setActiveTab(item.id as Tab);
-                        // Reset filters when clicking tab
-                        if (item.id === 'Notes' || item.id === 'Assignments') setSelectedSubject('All');
-                        setIsSidebarOpen(false);
-                    }}
-                    className={`w-full flex items-center px-4 py-3 text-sm font-medium transition-colors duration-200 rounded-lg ${
-                        activeTab === item.id
-                        ? 'bg-primary text-white shadow-md'
-                        : 'text-gray-600 dark:text-gray-300 hover:bg-primary/10 hover:text-primary dark:hover:bg-primary/20'
-                    }`}
-                >
-                    <item.icon className="mr-3 h-5 w-5" strokeWidth={activeTab === item.id ? 2.5 : 2} />
-                    {item.label}
-                </button>
-            ))}
-            
+        <nav className="flex-grow px-4 space-y-1">
+          {sidebarItems.map((item) => (
             <button
-                onClick={() => {
-                    navigate('/student/help');
-                    setIsSidebarOpen(false);
-                }}
-                className={`w-full flex items-center px-4 py-3 text-sm font-medium transition-colors duration-200 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-primary/10 hover:text-primary dark:hover:bg-primary/20`}
+              key={item.id}
+              onClick={() => handleSidebarClick(item.id)}
+              className={`w-full flex items-center px-4 py-3 text-sm font-bold uppercase tracking-wider rounded-xl transition-all relative ${
+                item.active 
+                  ? 'bg-primary text-white shadow-lg shadow-primary/20' 
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
             >
-                <LifeBuoy className="mr-3 h-5 w-5" />
-                Help & Feedback
+              <span className="mr-4">{item.icon}</span>
+              {item.label}
+              {item.id === 'subscription' && (isExpired || isNearingExpiry) && (
+                <AlertTriangle size={14} className={`ml-auto ${isExpired ? 'text-danger' : 'text-highlight'}`} />
+              )}
+              {item.active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-highlight rounded-r-full"></div>}
             </button>
-
-            <div className="border-t border-gray-100 dark:border-gray-700 my-2"></div>
-            
-            <button
-                onClick={() => navigate('/student/settings')}
-                className="w-full flex items-center px-4 py-3 text-sm font-medium transition-colors duration-200 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-primary/10 hover:text-primary dark:hover:bg-primary/20"
-            >
-                <SettingsIcon className="mr-3 h-5 w-5" />
-                Settings
-            </button>
+          ))}
         </nav>
 
-        {/* User Profile & Logout */}
-        <div className="mt-auto p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-           <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-3 overflow-hidden">
-                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden border border-gray-200 dark:border-gray-600">
-                        {user?.avatarUrl ? (
-                            <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center text-gray-500 font-bold">
-                                {user?.name.charAt(0)}
-                            </div>
-                        )}
-                    </div>
-                    <div className="overflow-hidden">
-                        <p className="font-semibold font-poppins text-text-primary dark:text-gray-100 truncate">{user?.name}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.classLevel} Student</p>
-                    </div>
-                </div>
-           </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center w-full px-4 py-2.5 text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors duration-200"
+        <div className="mt-auto border-t border-border-main p-6 bg-secondary/50">
+          <div className="flex items-center space-x-4 mb-6">
+            <div className="w-12 h-12 rounded-full bg-bg-main flex items-center justify-center text-gray-400 font-bold overflow-hidden border-2 border-primary/50">
+              {user?.avatarUrl ? <img src={user.avatarUrl} className="w-full h-full object-cover" /> : user?.name.charAt(0)}
+            </div>
+            <div className="overflow-hidden">
+              <p className="font-bold text-white truncate">{user?.name}</p>
+              <p className="text-[10px] text-primary font-bold uppercase tracking-widest">{user?.classLevel} Student</p>
+            </div>
+          </div>
+          <button 
+            onClick={async () => { await logout(); navigate('/login'); }} 
+            className="flex items-center text-danger hover:text-red-400 font-bold uppercase text-xs tracking-widest transition-colors"
           >
-            <LogOut className="mr-3 h-5 w-5" />
-            Logout
+            <LogOut className="mr-3 h-4 w-4" /> Logout Account
           </button>
         </div>
       </aside>
 
-      {/* Main Content Wrapper */}
-      <div className="flex-1 flex flex-col min-w-0 h-full">
-          {/* Mobile Header */}
-          <header className="bg-white dark:bg-gray-800 p-4 shadow-sm flex items-center justify-between md:hidden z-10 shrink-0 transition-colors duration-200">
-              <div className="flex items-center">
-                  <button 
-                      onClick={() => setIsSidebarOpen(true)}
-                      className="text-gray-600 dark:text-gray-300 hover:text-primary focus:outline-none mr-4"
-                  >
-                      <Menu size={24} />
-                  </button>
-                  <span className="text-lg font-bold text-primary font-poppins">{activeTab === 'Announcements' ? 'Dashboard' : activeTab}</span>
-              </div>
-               <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-200 dark:border-gray-600">
-                   {user?.avatarUrl ? (
-                        <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
-                   ) : (
-                        <div className="w-full h-full bg-primary text-white flex items-center justify-center font-bold text-sm">
-                            {user?.name.charAt(0)}
-                        </div>
-                   )}
-               </div>
-          </header>
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        {/* Mobile Header */}
+        <header className="md:hidden bg-bg-card h-16 border-b border-border-main flex items-center px-6 shrink-0 z-10">
+          <button onClick={() => setIsSidebarOpen(true)} className="text-gray-400 hover:text-white mr-4">
+            <Menu size={24} />
+          </button>
+          <h1 className="text-xl font-bold font-poppins text-primary">Class Nest</h1>
+        </header>
 
-          <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
-             {/* Desktop Header / Title area */}
-             <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-                <div className="hidden md:block">
-                     <h1 className="text-3xl font-poppins font-bold text-text-primary dark:text-white">{activeTab === 'Announcements' ? 'Student Dashboard' : activeTab}</h1>
-                     <p className="text-gray-500 dark:text-gray-400 mt-1">Welcome back, {user?.name}!</p>
+        <main className="flex-1 overflow-y-auto p-8 md:p-12 space-y-12 scrollbar-thin scrollbar-thumb-border-main">
+          
+          {/* Expiry Alerts */}
+          {isExpired ? (
+            <div className="bg-danger/10 border-l-4 border-danger p-6 rounded-r-card flex flex-col md:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                <div className="flex items-center text-center md:text-left">
+                    <div className="bg-danger p-3 rounded-2xl mr-4 shadow-lg shadow-danger/20 hidden md:block">
+                      <AlertTriangle className="text-white" size={24} />
+                    </div>
+                    <div>
+                        <p className="font-bold text-red-100 text-xl font-poppins">Access Restricted</p>
+                        <p className="text-red-400 font-medium">Your access has expired. Pay UGX {subscriptionFee.toLocaleString()} now to unlock materials.</p>
+                    </div>
                 </div>
-                
-                {/* Search Bar for Notes or Assignments when searching */}
-                {(activeTab === 'Notes' || activeTab === 'Assignments') && selectedSubject !== 'All' && (
-                  <div className="relative w-full md:w-72">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18}/>
-                    <input 
-                      type="text" 
-                      placeholder={`Search ${activeTab.toLowerCase()}...`}
-                      value={searchTerm}
-                      onChange={e => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 border rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-text-primary dark:text-white placeholder-gray-500 dark:placeholder-gray-400 text-sm"
+                <button 
+                    onClick={() => navigate('/student/subscription')}
+                    className="bg-danger text-white px-10 py-3 rounded-xl font-bold hover:bg-red-700 transition-all text-sm shadow-xl shadow-danger/25 active:scale-95 whitespace-nowrap"
+                >
+                    Pay Access Fee
+                </button>
+            </div>
+          ) : isNearingExpiry ? (
+            <div className="bg-highlight/10 border-l-4 border-highlight p-6 rounded-r-card flex flex-col md:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                <div className="flex items-center text-center md:text-left">
+                    <div className="bg-highlight p-3 rounded-2xl mr-4 shadow-lg shadow-highlight/20 hidden md:block">
+                      <Clock className="text-white" size={24} />
+                    </div>
+                    <div>
+                        <p className="font-bold text-orange-100 text-xl font-poppins">Subscription Alert</p>
+                        <p className="text-orange-300 font-medium">You have <span className="font-bold underline">{diffDays} days</span> left. Add funds to avoid interruption.</p>
+                    </div>
+                </div>
+                <button 
+                    onClick={() => navigate('/student/subscription')}
+                    className="bg-highlight text-bg-main px-10 py-3 rounded-xl font-bold hover:bg-orange-600 transition-all text-sm shadow-xl shadow-highlight/25 active:scale-95 flex items-center whitespace-nowrap"
+                >
+                    <Wallet size={16} className="mr-2" /> Top Up Now
+                </button>
+            </div>
+          ) : null}
+
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+              <div className="flex flex-col gap-2">
+                <h1 className="text-4xl md:text-5xl font-poppins font-bold text-white tracking-tight">
+                  {activeTab === 'chat' ? 'Classroom Hub' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+                </h1>
+                <p className="text-gray-400 text-lg font-medium">Welcome back, @{user?.username}!</p>
+              </div>
+              <button 
+                onClick={handleManualSync}
+                disabled={syncing || loading}
+                className="flex items-center px-6 py-2.5 bg-bg-card border border-border-main rounded-full text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-50"
+              >
+                <RefreshCw size={14} className={`mr-2 ${syncing ? 'animate-spin text-primary' : ''}`} />
+                {syncing ? 'Syncing...' : 'Sync System'}
+              </button>
+          </div>
+
+          {/* Views */}
+          {(activeTab === 'notes' || activeTab === 'assignments') && !selectedSubject && (
+            <div className="space-y-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {subjectConfig.map((item) => (
+                    <div 
+                        key={item.name}
+                        onClick={() => {
+                            if(isExpired) {
+                                navigate('/student/subscription');
+                            } else {
+                                setSelectedSubject(item.subject);
+                            }
+                        }}
+                        className={`${item.color} p-10 rounded-card shadow-2xl cursor-pointer hover:scale-[1.02] transition-all relative overflow-hidden group ${isExpired ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}
+                    >
+                        <div className="relative z-10 flex flex-col h-full">
+                        <div className="bg-white/20 w-14 h-14 rounded-2xl flex items-center justify-center mb-8">
+                            {item.icon}
+                        </div>
+                        <h3 className="text-2xl font-bold font-poppins mb-1">{item.name}</h3>
+                        <p className="text-white/80 font-bold text-sm uppercase tracking-widest">
+                            {getCount(item.subject, activeTab)} {activeTab}
+                        </p>
+                        </div>
+                        <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -mr-20 -mt-20 group-hover:scale-125 transition-transform duration-500"></div>
+                    </div>
+                    ))}
+                </div>
+            </div>
+          )}
+
+          {(activeTab === 'notes' || activeTab === 'assignments') && selectedSubject && (
+            <div className="space-y-8">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <button 
+                  onClick={() => setSelectedSubject(null)}
+                  className="flex items-center text-primary hover:text-highlight transition-colors font-bold uppercase tracking-widest text-sm"
+                >
+                  <X size={18} className="mr-2" /> Back to Subject List
+                </button>
+                <div className="relative w-full max-w-xs">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                  <input 
+                    type="text" 
+                    placeholder={`Filter ${activeTab}...`} 
+                    className="w-full bg-bg-card border border-border-main rounded-xl py-3 pl-12 pr-4 outline-none focus:ring-2 focus:ring-primary text-sm"
+                  />
+                </div>
+              </div>
+
+              <h2 className="text-3xl font-bold font-poppins text-highlight">{selectedSubject}</h2>
+              
+              {loading || syncing ? (
+                <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-primary"></div></div>
+              ) : (
+                activeTab === 'notes' ? (
+                  notes.filter(n => n.subject === selectedSubject).length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {notes.filter(n => n.subject === selectedSubject).map(note => (
+                        <div 
+                          key={note.id} 
+                          onClick={() => {
+                              if(isExpired) navigate('/student/subscription');
+                              else navigate(`/student/notes/${note.id}`);
+                          }}
+                          className="bg-bg-card p-8 rounded-card border border-border-main hover:border-primary/50 cursor-pointer transition-all hover:shadow-2xl group relative overflow-hidden"
+                        >
+                          <div className="flex justify-between items-start mb-8">
+                            <div className="bg-primary/10 p-4 rounded-2xl text-primary group-hover:bg-primary group-hover:text-white transition-all">
+                              <BookOpen size={24} />
+                            </div>
+                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">{new Date(note.uploadDate).toLocaleDateString()}</span>
+                          </div>
+                          <h3 className="text-xl font-bold font-poppins mb-6 line-clamp-2 leading-tight">{note.title}</h3>
+                          <div className="flex items-center text-primary font-bold text-xs uppercase tracking-widest">
+                            Study Note <ChevronRight size={14} className="ml-1 group-hover:translate-x-1 transition-transform" />
+                          </div>
+                          <div className="absolute bottom-0 right-0 w-24 h-24 bg-primary/5 rounded-tl-card pointer-events-none group-hover:bg-primary/10 transition-colors"></div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-20 bg-bg-card rounded-card border border-dashed border-border-main">
+                      <FileText size={64} className="mx-auto text-gray-700 mb-6" />
+                      <p className="text-gray-400 text-xl font-poppins font-bold">Library is empty for {selectedSubject}.</p>
+                      <p className="text-gray-600 text-xs mt-4 font-bold uppercase tracking-[0.3em]">System Node: {user?.classLevel}</p>
+                    </div>
+                  )
+                ) : (
+                  assignments.filter(a => a.subject === selectedSubject).length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {assignments.filter(a => a.subject === selectedSubject).map(assign => (
+                        <div 
+                          key={assign.id} 
+                          onClick={() => {
+                               if(isExpired) navigate('/student/subscription');
+                               else navigate(`/student/assignments/${assign.id}`);
+                          }}
+                          className="bg-bg-card p-8 rounded-card border border-border-main hover:border-highlight/50 cursor-pointer transition-all hover:shadow-2xl group border-l-8 border-l-highlight"
+                        >
+                          <div className="flex justify-between items-start mb-8">
+                            <div className="bg-highlight/10 p-4 rounded-2xl text-highlight group-hover:bg-highlight group-hover:text-bg-main transition-all">
+                              <ClipboardList size={24} />
+                            </div>
+                            <span className="text-[10px] font-bold text-danger bg-danger/10 px-3 py-1 rounded-full uppercase tracking-widest border border-danger/20">Due: {new Date(assign.dueDate).toLocaleDateString()}</span>
+                          </div>
+                          <h3 className="text-xl font-bold font-poppins mb-6 line-clamp-2 leading-tight">{assign.content}</h3>
+                          <div className="flex items-center text-highlight font-bold text-xs uppercase tracking-widest">
+                            Task Details <ChevronRight size={14} className="ml-1 group-hover:translate-x-1 transition-transform" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-20 bg-bg-card rounded-card border border-dashed border-border-main">
+                      <ClipboardList size={64} className="mx-auto text-gray-700 mb-6" />
+                      <p className="text-gray-400 text-xl font-poppins font-bold">No tasks assigned for {selectedSubject}.</p>
+                      <p className="text-gray-600 text-xs mt-4 font-bold uppercase tracking-[0.3em]">Enjoy the break!</p>
+                    </div>
+                  )
+                )
+              )}
+            </div>
+          )}
+
+          {activeTab === 'chat' && (
+             <div className="max-w-5xl mx-auto h-[700px]">
+                 <ChatRoom classLevel={user?.classLevel || 'General'} />
+             </div>
+          )}
+
+          {activeTab === 'announcements' && (
+            <div className="max-w-3xl mx-auto space-y-6">
+              {loading || syncing ? (
+                <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-primary"></div></div>
+              ) : announcements.length > 0 ? announcements.map(ann => (
+                <div key={ann.id} className="bg-bg-card p-8 rounded-card border border-border-main relative overflow-hidden group hover:border-primary/30 transition-all">
+                  <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
+                    <Megaphone size={120} />
+                  </div>
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="bg-primary/10 p-3 rounded-xl text-primary">
+                      <Bell size={24} />
+                    </div>
+                    <div>
+                        <span className="text-[10px] font-bold text-primary uppercase tracking-[0.3em] block">{new Date(ann.date).toLocaleString()}</span>
+                        <span className="text-[10px] font-bold text-gray-600 uppercase tracking-widest block mt-1">Instructor: {ann.sender}</span>
+                    </div>
+                  </div>
+                  <p className="text-xl text-gray-200 leading-relaxed font-medium">{ann.message}</p>
+                </div>
+              )) : (
+                <div className="text-center py-20 bg-bg-card rounded-card border border-border-main">
+                  <Bell size={64} className="mx-auto text-gray-700 mb-6" />
+                  <p className="text-gray-500 text-2xl font-poppins font-bold">No active announcements.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'questions' && (
+            <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-10">
+              <div className="space-y-8">
+                <div className="bg-bg-card p-10 rounded-card border border-border-main shadow-2xl">
+                  <h3 className="text-2xl font-bold font-poppins mb-8 text-primary">Teacher Direct</h3>
+                  <div className="space-y-6">
+                    <textarea 
+                      value={newQuestion}
+                      onChange={(e) => setNewQuestion(e.target.value)}
+                      placeholder="Ask your instructor a question..."
+                      className="w-full bg-bg-main border border-border-main rounded-2xl p-6 min-h-[180px] outline-none focus:ring-4 focus:ring-primary/10 focus:border-primary text-gray-200 resize-none transition-all placeholder:text-gray-600"
                     />
+                    <button 
+                      onClick={handleSendQuestion}
+                      disabled={!newQuestion.trim() || syncing}
+                      className="w-full bg-primary text-white py-5 rounded-2xl font-bold hover:bg-primary-dark transition-all flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-primary/20 text-lg active:scale-95"
+                    >
+                      {syncing ? 'Sending...' : 'Post Question'} <Send size={20} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-8 overflow-y-auto max-h-[700px] pr-4 scrollbar-thin scrollbar-thumb-border-main">
+                <h3 className="text-2xl font-bold font-poppins text-gray-400">Response History</h3>
+                {loading || syncing ? (
+                    <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-12 w-12 border-t-2 border-primary"></div></div>
+                ) : questions.length > 0 ? questions.map(q => (
+                  <div key={q.id} className="bg-bg-card p-8 rounded-card border border-border-main space-y-6 group hover:shadow-2xl transition-all">
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-bg-main flex items-center justify-center text-xs font-bold text-primary border border-primary/20">{user?.name.charAt(0)}</div>
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">You asked</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-gray-700 uppercase">{new Date(q.questionDate).toLocaleDateString()}</span>
+                    </div>
+                    <p className="text-gray-200 font-medium text-lg leading-snug">{q.questionText}</p>
+                    
+                    {q.isAnswered ? (
+                      <div className="bg-primary/5 p-6 rounded-2xl border border-primary/10 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-4 opacity-5"><MessageCircle size={60}/></div>
+                        <div className="flex items-center gap-3 mb-4">
+                           <div className="bg-primary text-white p-1.5 rounded-lg"><UserIcon size={14} /></div>
+                           <span className="text-xs font-bold text-primary uppercase tracking-widest">Teacher Response</span>
+                        </div>
+                        <p className="text-gray-300 italic text-base">"{q.answerText}"</p>
+                        {q.answerDate && <p className="text-[9px] text-gray-600 mt-4 text-right">{new Date(q.answerDate).toLocaleTimeString()}</p>}
+                      </div>
+                    ) : (
+                      <div className="bg-highlight/5 p-5 rounded-2xl border border-highlight/10 flex items-center gap-3">
+                         <div className="animate-pulse bg-highlight/20 p-2 rounded-lg"><Clock size={16} className="text-highlight" /></div>
+                         <span className="text-xs font-bold text-highlight uppercase tracking-[0.2em]">Under Review...</span>
+                      </div>
+                    )}
+                  </div>
+                )) : (
+                  <div className="text-center py-20 bg-bg-card rounded-card border border-border-main">
+                    <p className="text-gray-600 font-bold uppercase tracking-widest">No conversation history.</p>
                   </div>
                 )}
-             </div>
+              </div>
+            </div>
+          )}
 
-             {renderContent()}
-
-             <div className="mt-12 text-center text-xs text-gray-400 dark:text-gray-600 pb-4">
-                © 2025 Class Nest — Dukestar Developers
-             </div>
-          </main>
+          {/* Page Footer */}
+          <footer className="pt-16 text-center text-[10px] font-bold text-gray-700 uppercase tracking-[0.5em] border-t border-border-main/50">
+            <p>© 2025 Class Nest — Distributed Learning Node — Dukestar Devs</p>
+          </footer>
+        </main>
       </div>
-
     </div>
   );
 };

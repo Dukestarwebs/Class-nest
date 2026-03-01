@@ -1,5 +1,5 @@
 {
   "name": "Class Nest",
   "description": "A web application for teachers to share notes and announcements with their students. All data is managed locally to simulate an AI-powered backend.",
-  "requestFramePermissions": []
+  "requestFramePermissions": ["camera", "microphone"]
 }

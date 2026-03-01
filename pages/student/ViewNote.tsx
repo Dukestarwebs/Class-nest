@@ -1,11 +1,10 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Note, Subject } from '../../types';
 import { getNoteById } from '../../data';
 import { useAuth } from '../../contexts/AuthContext';
 import { ArrowLeft, History, Calendar, BookOpen, Calculator, Microscope, Binary, Globe, Book } from 'lucide-react';
+import DOMPurify from 'dompurify';
 
 const ViewNote: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -28,26 +27,11 @@ const ViewNote: React.FC = () => {
   const handleBack = () => {
       if (user?.role === 'admin') {
           navigate('/admin/notes');
+      } else if (user?.role === 'teacher') {
+          navigate('/teacher/notes');
       } else {
           navigate('/student/dashboard');
       }
-  };
-
-  const SubjectIcon = ({ subject }: { subject: Subject }) => {
-    switch (subject) {
-        case Subject.History: return <History size={16} className="mr-2" />;
-        case Subject.Geography: return <Globe size={16} className="mr-2" />;
-        case Subject.Mathematics: return <Calculator size={16} className="mr-2" />;
-        case Subject.Physics: 
-        case Subject.Chemistry:
-        case Subject.Biology:
-        case Subject.Science:
-            return <Microscope size={16} className="mr-2" />;
-        case Subject.ICT: return <Binary size={16} className="mr-2" />;
-        case Subject.English:
-            return <BookOpen size={16} className="mr-2" />;
-        default: return <Book size={16} className="mr-2" />;
-    }
   };
 
   if (loading) {
@@ -72,6 +56,9 @@ const ViewNote: React.FC = () => {
     );
   }
 
+  // Sanitize the content
+  const cleanContent = DOMPurify.sanitize(note.content);
+
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 font-roboto transition-colors duration-200">
       {/* Header */}
@@ -84,7 +71,7 @@ const ViewNote: React.FC = () => {
                 <div className="p-2 rounded-full group-hover:bg-gray-100 dark:group-hover:bg-gray-800 mr-2 transition-colors">
                     <ArrowLeft size={20} />
                 </div>
-                {user?.role === 'admin' ? 'Back to Notes' : 'Back to Dashboard'}
+                {user?.role === 'student' ? 'Back to Dashboard' : 'Back to Notes'}
             </button>
         </div>
       </header>
@@ -111,12 +98,47 @@ const ViewNote: React.FC = () => {
             </h1>
          </div>
 
-         <article className="prose dark:prose-invert max-w-none text-lg md:text-xl leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap font-serif">
-            {note.content}
+         <article className="prose dark:prose-invert max-w-none text-lg md:text-xl leading-relaxed text-gray-800 dark:text-gray-200 font-serif view-note-content">
+            <div dangerouslySetInnerHTML={{ __html: cleanContent }} />
          </article>
+         
+         {/* Styles for content rendering */}
+         <style>{`
+            .view-note-content img {
+                max-width: 100%;
+                height: auto;
+                border-radius: 8px;
+                margin: 20px 0;
+            }
+            .view-note-content ul {
+                list-style-type: disc;
+                padding-left: 20px;
+            }
+            .view-note-content ol {
+                list-style-type: decimal;
+                padding-left: 20px;
+            }
+         `}</style>
       </main>
     </div>
   );
+};
+
+const SubjectIcon = ({ subject }: { subject: Subject }) => {
+    switch (subject) {
+        case Subject.History: return <History size={16} className="mr-2" />;
+        case Subject.Geography: return <Globe size={16} className="mr-2" />;
+        case Subject.Mathematics: return <Calculator size={16} className="mr-2" />;
+        case Subject.Physics: 
+        case Subject.Chemistry:
+        case Subject.Biology:
+        case Subject.Science:
+            return <Microscope size={16} className="mr-2" />;
+        case Subject.ICT: return <Binary size={16} className="mr-2" />;
+        case Subject.English:
+            return <BookOpen size={16} className="mr-2" />;
+        default: return <Book size={16} className="mr-2" />;
+    }
 };
 
 export default ViewNote;

@@ -1,11 +1,11 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { Assignment, Subject, ClassLevel } from '../../types';
-import { Trash2, Edit, Plus, Calendar, ClipboardList, X, Save, History, Globe, Calculator, Microscope, Binary, BookOpen, Book } from 'lucide-react';
+import { Trash2, Edit, Plus, Calendar, ClipboardList, X, Save, History, Globe, Calculator, Microscope, Binary, BookOpen, Book, Box } from 'lucide-react';
 import { getAssignments, addAssignment, updateAssignment, deleteAssignment } from '../../data';
+import { useAuth } from '../../contexts/AuthContext';
 
 const ManageAssignments: React.FC = () => {
+  const { user } = useAuth();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -17,10 +17,23 @@ const ManageAssignments: React.FC = () => {
   const [content, setContent] = useState('');
   const [error, setError] = useState('');
 
+  // Determine available classes
+  const availableClasses: ClassLevel[] = user?.role === 'teacher' && user.assignedClasses 
+    ? user.assignedClasses 
+    : ['P6', 'P7', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6'];
+
+  useEffect(() => {
+      if (availableClasses.length > 0 && !availableClasses.includes(classLevel)) {
+          setClassLevel(availableClasses[0]);
+      }
+  }, [user]);
+
   const fetchAssignments = async () => {
     try {
         const list = await getAssignments();
-        const sorted = list.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+        // Filter out archived assignments
+        const activeList = list.filter(a => !a.isArchived);
+        const sorted = activeList.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
         setAssignments(sorted);
     } catch (e) {
         console.error("Error fetching assignments", e);
@@ -33,7 +46,7 @@ const ManageAssignments: React.FC = () => {
 
   const resetForm = () => {
     setSubject(Subject.Mathematics);
-    setClassLevel('S1');
+    if(availableClasses.length > 0) setClassLevel(availableClasses[0]);
     setDueDate('');
     setContent('');
     setIsEditing(false);
@@ -72,7 +85,12 @@ const ManageAssignments: React.FC = () => {
       if (isEditing && currentId) {
         await updateAssignment(currentId, assignmentData);
       } else {
-        await addAssignment({ ...assignmentData, postedDate: new Date().toISOString() });
+        // FIX: Pass authorId to addAssignment function. Also ensure user is available.
+        if (!user) {
+            setError('You must be logged in to post assignments.');
+            return;
+        }
+        await addAssignment({ ...assignmentData, postedDate: new Date().toISOString() }, user.id);
       }
       resetForm();
       fetchAssignments();
@@ -83,7 +101,7 @@ const ManageAssignments: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    // Optimistic update
+    if(!window.confirm("Delete this assignment permanently?")) return;
     setAssignments(prev => prev.filter(a => a.id !== id));
     try {
       await deleteAssignment(id);
@@ -93,21 +111,19 @@ const ManageAssignments: React.FC = () => {
     }
   };
 
-  const SubjectIcon = ({ subject }: { subject: Subject }) => {
-    switch (subject) {
-        case Subject.History: return <History size={12} className="mr-1" />;
-        case Subject.Geography: return <Globe size={12} className="mr-1" />;
-        case Subject.Mathematics: return <Calculator size={12} className="mr-1" />;
-        case Subject.Physics: 
-        case Subject.Chemistry:
-        case Subject.Biology:
-        case Subject.Science:
-            return <Microscope size={12} className="mr-1" />;
-        case Subject.ICT: return <Binary size={12} className="mr-1" />;
-        case Subject.English:
-            return <BookOpen size={12} className="mr-1" />;
-        default: return <Book size={12} className="mr-1" />;
-    }
+  const handleArchive = async (id: string) => {
+      // Optimistic update
+      setAssignments(prev => prev.filter(a => a.id !== id));
+
+      try {
+          await updateAssignment(id, { isArchived: true });
+          if (isEditing && currentId === id) resetForm();
+      } catch (err: any) {
+          console.error("Archive failed", err);
+          const msg = err.message || "Unknown error";
+          alert(`Failed to archive assignment: ${msg}`);
+          fetchAssignments(); // Revert on failure
+      }
   };
 
   return (
@@ -149,9 +165,9 @@ const ManageAssignments: React.FC = () => {
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Class</label>
                     <select value={classLevel} onChange={e => setClassLevel(e.target.value as ClassLevel)} className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:outline-none bg-white dark:bg-gray-700 text-text-primary dark:text-white">
-                        {['P6', 'P7', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6'].map(cls => (
+                        {availableClasses.length > 0 ? availableClasses.map(cls => (
                             <option key={cls} value={cls}>{cls}</option>
-                        ))}
+                        )) : <option disabled>No classes assigned</option>}
                     </select>
                 </div>
             </div>
@@ -213,12 +229,21 @@ const ManageAssignments: React.FC = () => {
                 <button 
                   onClick={() => handleEdit(assign)}
                   className="flex-1 flex items-center justify-center px-3 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-300 dark:hover:bg-blue-900/40 rounded-lg transition-colors"
+                  title="Edit"
                 >
                   <Edit size={16} className="mr-1.5"/> Edit
                 </button>
                 <button 
+                  onClick={() => handleArchive(assign.id)}
+                  className="flex-1 flex items-center justify-center px-3 py-2 bg-orange-50 text-orange-600 hover:bg-orange-100 dark:bg-orange-900/20 dark:text-orange-300 dark:hover:bg-orange-900/40 rounded-lg transition-colors"
+                  title="Archive"
+                >
+                  <Box size={16} className="mr-1.5"/> Archive
+                </button>
+                <button 
                   onClick={() => handleDelete(assign.id)}
                   className="flex-1 flex items-center justify-center px-3 py-2 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300 dark:hover:bg-red-900/40 rounded-lg transition-colors"
+                  title="Delete"
                 >
                   <Trash2 size={16} className="mr-1.5"/> Delete
                 </button>
@@ -234,6 +259,23 @@ const ManageAssignments: React.FC = () => {
       </div>
     </div>
   );
+};
+
+const SubjectIcon = ({ subject }: { subject: Subject }) => {
+    switch (subject) {
+        case Subject.History: return <History size={12} className="mr-1" />;
+        case Subject.Geography: return <Globe size={12} className="mr-1" />;
+        case Subject.Mathematics: return <Calculator size={12} className="mr-1" />;
+        case Subject.Physics: 
+        case Subject.Chemistry:
+        case Subject.Biology:
+        case Subject.Science:
+            return <Microscope size={12} className="mr-1" />;
+        case Subject.ICT: return <Binary size={12} className="mr-1" />;
+        case Subject.English:
+            return <BookOpen size={12} className="mr-1" />;
+        default: return <Book size={12} className="mr-1" />;
+    }
 };
 
 export default ManageAssignments;

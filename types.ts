@@ -1,14 +1,55 @@
 
+
 export interface User {
   id: string;
   name: string;
   username: string;
   email: string;
-  password?: string; // Should not be sent to client, but needed for creation
-  role: 'admin' | 'student';
+  password?: string;
+  role: 'admin' | 'student' | 'teacher';
   classLevel?: ClassLevel;
+  assignedClasses?: ClassLevel[];
+  assignedSubjects?: Subject[];
   isApproved: boolean;
   avatarUrl?: string;
+  bio?: string;
+  expertise?: string;
+  reasonForJoining?: string;
+  subscription_expiry?: string;
+  phone_number?: string;
+  schoolName?: string;
+  schoolId?: string;
+  plan?: 'standard' | 'developer';
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  text: string;
+  timestamp: string;
+  role: 'admin' | 'student' | 'teacher';
+  reactions?: { emoji: string; count: number }[];
+  isPoll?: boolean;
+  pollOptions?: string[];
+}
+
+export interface Payment {
+  id: string;
+  user_id: string;
+  user_name?: string;
+  transaction_id: string;
+  amount: number;
+  status: 'completed' | 'failed' | 'processing';
+  date: string;
+}
+
+export interface Job {
+    id: string;
+    title: string;
+    description: string;
+    requirements: string;
+    postedDate: string;
 }
 
 export type ClassLevel = 'P6' | 'P7' | 'S1' | 'S2' | 'S3' | 'S4' | 'S5' | 'S6';
@@ -34,9 +75,33 @@ export interface Note {
   id: string;
   subject: Subject;
   title: string;
-  content: string; // Actual text content of the note
+  content: string;
   uploadDate: string;
   classLevel: ClassLevel;
+  isArchived?: boolean;
+  authorId?: string;
+}
+
+/* Added missing Assignment interface used in components and data services */
+export interface Assignment {
+  id: string;
+  subject: Subject;
+  content: string;
+  dueDate: string;
+  postedDate: string;
+  classLevel: ClassLevel;
+  isArchived?: boolean;
+  authorId?: string;
+}
+
+export interface Draft {
+    id: string;
+    user_id: string;
+    subject: Subject;
+    title: string;
+    content: string;
+    classLevel: ClassLevel;
+    updated_at: string;
 }
 
 export interface Announcement {
@@ -58,15 +123,6 @@ export interface Question {
   isAnswered: boolean;
 }
 
-export interface Assignment {
-  id: string;
-  subject: Subject;
-  content: string; // Replaces title and description
-  dueDate: string;
-  postedDate: string;
-  classLevel: ClassLevel;
-}
-
 export interface Feedback {
   id: string;
   studentId: string;
@@ -75,4 +131,15 @@ export interface Feedback {
   subject: string;
   message: string;
   date: string;
+}
+
+export interface SchoolClass {
+  id: string;
+  name: string;
+  gradeLevel: ClassLevel;
+  classTeacherId?: string;
+  studentIds: string[];
+  capacity: number;
+  academicYear: string;
+  isArchived: boolean;
 }

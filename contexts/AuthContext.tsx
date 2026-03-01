@@ -1,7 +1,6 @@
-
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { User } from '../types';
-import { findUserByUsername, getAdminProfile, getUsers } from '../data';
+import { findUserByUsername, getAdminProfile, getUsers, updateUser as updateUserData, getSystemSettings } from '../data';
 
 interface AuthContextType {
   user: User | null;
@@ -38,9 +37,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 } else {
                     // Verify user still exists in database and is approved
                     const allUsers = await getUsers();
-                    const exists = allUsers.find(u => u.id === storedUser.id);
+                    const settings = await getSystemSettings();
+                    let exists = allUsers.find(u => u.id === storedUser.id);
                     if (exists && exists.isApproved) {
+                        // Enforce exactly 2 days from now if they currently have more (One-time reset for current users)
+                        const twoDaysFromNow = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+                        if (settings.subscriptionsEnabled && exists.plan !== 'developer' && exists.role === 'student' && (!exists.subscription_expiry || new Date(exists.subscription_expiry) > twoDaysFromNow)) {
+                            const newExpiry = twoDaysFromNow.toISOString();
+                            await updateUserData(exists.id, { subscription_expiry: newExpiry });
+                            exists.subscription_expiry = newExpiry;
+                        }
                         setUser(exists);
+                        localStorage.setItem('classNestUser', JSON.stringify(exists));
                     } else {
                         // User deleted or unapproved
                         localStorage.removeItem('classNestUser');
@@ -62,8 +70,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const normalizedIdentifier = identifier.trim();
     const adminProfile = getAdminProfile();
     
+    console.log(`Attempting login for: ${normalizedIdentifier}`);
+
     // Admin check (Username)
     if (normalizedIdentifier === adminProfile.username && pass === adminProfile.password) {
+        console.log("Matched admin credentials");
         const adminUser: User = {
             id: 'admin-user',
             name: adminProfile.name,
@@ -77,16 +88,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return adminUser;
     }
 
-    // Student check (Username)
-    const existingUser = await findUserByUsername(normalizedIdentifier);
-    
-    if (existingUser && existingUser.role === 'student' && existingUser.password === pass) {
-        if (!existingUser.isApproved) {
-             throw new Error("Your account is pending approval by the admin. Please wait for approval and try again later.");
+    // Student, Teacher & School Admin check (Username)
+    try {
+        const existingUser = await findUserByUsername(normalizedIdentifier);
+        
+        if (!existingUser) {
+            console.log("User not found in DB");
+            throw new Error('Invalid credentials. Please check your username and password.');
         }
-        localStorage.setItem('classNestUser', JSON.stringify(existingUser));
-        setUser(existingUser);
-        return existingUser;
+
+        console.log("User found:", existingUser.username, "Role:", existingUser.role);
+
+        if ((existingUser.role === 'student' || existingUser.role === 'teacher' || existingUser.role === 'admin') && existingUser.password === pass) {
+            if (!existingUser.isApproved) {
+                 console.log("User not approved");
+                 throw new Error("Your account is pending approval by the admin. Please wait for approval and try again later.");
+            }
+            
+            // Enforce exactly 2 days from now if they currently have more (One-time reset for current users)
+            const settings = await getSystemSettings();
+            const twoDaysFromNow = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+            if (settings.subscriptionsEnabled && existingUser.plan !== 'developer' && existingUser.role === 'student' && (!existingUser.subscription_expiry || new Date(existingUser.subscription_expiry) > twoDaysFromNow)) {
+                const newExpiry = twoDaysFromNow.toISOString();
+                await updateUserData(existingUser.id, { subscription_expiry: newExpiry });
+                existingUser.subscription_expiry = newExpiry;
+            }
+
+            console.log("Login successful");
+            localStorage.setItem('classNestUser', JSON.stringify(existingUser));
+            setUser(existingUser);
+            return existingUser;
+        } else {
+            console.log("Password mismatch or role issue. Input pass length:", pass.length, "DB pass length:", existingUser.password?.length);
+        }
+    } catch (e) {
+        console.error("Login lookup error:", e);
+        throw e;
     }
 
     throw new Error('Invalid credentials. Please check your username and password.');

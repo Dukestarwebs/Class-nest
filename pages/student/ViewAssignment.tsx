@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Assignment, Subject } from '../../types';
@@ -22,23 +20,6 @@ const ViewAssignment: React.FC = () => {
     };
     fetchAssignment();
   }, [id]);
-
-  const SubjectIcon = ({ subject }: { subject: Subject }) => {
-    switch (subject) {
-        case Subject.History: return <History size={16} className="mr-2" />;
-        case Subject.Geography: return <Globe size={16} className="mr-2" />;
-        case Subject.Mathematics: return <Calculator size={16} className="mr-2" />;
-        case Subject.Physics: 
-        case Subject.Chemistry:
-        case Subject.Biology:
-        case Subject.Science:
-            return <Microscope size={16} className="mr-2" />;
-        case Subject.ICT: return <Binary size={16} className="mr-2" />;
-        case Subject.English:
-            return <BookOpen size={16} className="mr-2" />;
-        default: return <Book size={16} className="mr-2" />;
-    }
-  };
 
   if (loading) {
     return (
@@ -117,6 +98,23 @@ const ViewAssignment: React.FC = () => {
       </main>
     </div>
   );
+};
+
+const SubjectIcon = ({ subject }: { subject: Subject }) => {
+    switch (subject) {
+        case Subject.History: return <History size={16} className="mr-2" />;
+        case Subject.Geography: return <Globe size={16} className="mr-2" />;
+        case Subject.Mathematics: return <Calculator size={16} className="mr-2" />;
+        case Subject.Physics: 
+        case Subject.Chemistry:
+        case Subject.Biology:
+        case Subject.Science:
+            return <Microscope size={16} className="mr-2" />;
+        case Subject.ICT: return <Binary size={16} className="mr-2" />;
+        case Subject.English:
+            return <BookOpen size={16} className="mr-2" />;
+        default: return <Book size={16} className="mr-2" />;
+    }
 };
 
 export default ViewAssignment;
