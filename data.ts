@@ -1,6 +1,6 @@
 
 
-import { User, Note, Announcement, Question, Subject, Assignment, Feedback, Job, Payment, Draft, ChatMessage, SchoolClass, ClassLevel } from './types';
+import { User, Note, Announcement, Question, Subject, Assignment, Feedback, Job, Payment, ChatMessage, SchoolClass, ClassLevel } from './types';
 import { ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_USERNAME } from './constants';
 import { supabase } from './supabaseClient';
 
@@ -222,6 +222,27 @@ export const approveUser = async (id: string): Promise<void> => {
     if (error) throw error;
 };
 
+export const findUserByEmail = async (email: string): Promise<User | undefined> => {
+    const { data } = await supabase.from('users').select('*').ilike('email', email).maybeSingle();
+    if (!data) return undefined;
+    return {
+        id: data.id,
+        name: data.name,
+        username: data.username,
+        email: data.email,
+        password: data.password,
+        role: data.role,
+        classLevel: data.class_level,
+        assignedClasses: data.assigned_classes,
+        assignedSubjects: data.assigned_subjects,
+        isApproved: data.is_approved,
+        subscription_expiry: data.subscription_expiry,
+        avatarUrl: data.avatar_url,
+        schoolId: data.school_id,
+        schoolName: data.school_name,
+    };
+};
+
 export const findUserByUsername = async (username: string): Promise<User | undefined> => {
     const { data } = await supabase.from('users').select('*').ilike('username', username).maybeSingle();
     if (!data) return undefined;
@@ -285,103 +306,26 @@ export const sendMessage = async (classLevel: string, message: Omit<ChatMessage,
     localStorage.setItem(key, JSON.stringify(messages));
 };
 
-// --- DRAFTS MANAGEMENT ---
-
-const getLocalDrafts = (userId: string): Draft[] => {
-    const stored = localStorage.getItem(`local_drafts_${userId}`);
-    return stored ? JSON.parse(stored) : [];
-};
-
-const setLocalDrafts = (userId: string, drafts: Draft[]) => {
-    localStorage.setItem(`local_drafts_${userId}`, JSON.stringify(drafts));
-};
-
-export const getDrafts = async (userId: string): Promise<Draft[]> => {
-    try {
-        const { data, error } = await supabase
-            .from('drafts')
-            .select('*')
-            .eq('user_id', userId)
-            .order('updated_at', { ascending: false });
-        
-        if (error) {
-            if (error.code === 'PGRST205') return getLocalDrafts(userId);
-            throw error;
-        }
-        
-        return data.map((d: any) => ({
-            id: d.id,
-            user_id: d.user_id,
-            subject: d.subject,
-            title: d.title,
-            content: d.content,
-            classLevel: d.class_level,
-            updated_at: d.updated_at
-        }));
-    } catch (e) {
-        return getLocalDrafts(userId);
-    }
-};
-
-export const saveDraft = async (draft: Omit<Draft, 'id' | 'updated_at'>, existingId?: string): Promise<string> => {
-    const payload = {
-        user_id: draft.user_id,
-        subject: draft.subject,
-        title: draft.title,
-        content: draft.content,
-        class_level: draft.classLevel,
-        updated_at: new Date().toISOString()
-    };
-
-    try {
-        if (existingId && !existingId.startsWith('local-')) {
-            const { error } = await supabase.from('drafts').update(payload).eq('id', existingId);
-            if (error) {
-                if (error.code === 'PGRST205') throw new Error('Local fallback');
-                throw error;
-            }
-            return existingId;
-        } else {
-            const { data, error } = await supabase.from('drafts').insert([payload]).select();
-            if (error) {
-                if (error.code === 'PGRST205') throw new Error('Local fallback');
-                throw error;
-            }
-            return data[0].id;
-        }
-    } catch (e) {
-        const userId = draft.user_id;
-        const localId = existingId || `local-${Date.now()}`;
-        const drafts = getLocalDrafts(userId);
-        const updatedDraft = { ...draft, id: localId, updated_at: new Date().toISOString() };
-        
-        const index = drafts.findIndex(d => d.id === localId);
-        if (index > -1) drafts[index] = updatedDraft;
-        else drafts.push(updatedDraft);
-
-        setLocalDrafts(userId, drafts);
-        return localId;
-    }
-};
-
-export const deleteDraft = async (id: string): Promise<void> => {
-    if (id.startsWith('local-')) return; 
-    try {
-        const { error } = await supabase.from('drafts').delete().eq('id', id);
-        if (error && error.code !== 'PGRST205') throw error;
-    } catch (e) {}
-};
-
 // --- ADMIN PROFILE ---
 
 export const getAdminProfile = (): any => {
-  const stored = localStorage.getItem('adminProfile');
-  return stored ? JSON.parse(stored) : { 
-      name: 'Teacher Sylvia', 
-      username: ADMIN_USERNAME, 
-      email: ADMIN_EMAIL, 
-      password: ADMIN_PASSWORD 
-  };
+  try {
+      const stored = localStorage.getItem('adminProfile');
+      return stored ? JSON.parse(stored) : { 
+          name: 'Teacher Sylvia', 
+          username: ADMIN_USERNAME, 
+          email: ADMIN_EMAIL, 
+          password: ADMIN_PASSWORD 
+      };
+  } catch (e) {
+      console.error("Error parsing adminProfile", e);
+      return { 
+          name: 'Teacher Sylvia', 
+          username: ADMIN_USERNAME, 
+          email: ADMIN_EMAIL, 
+          password: ADMIN_PASSWORD 
+      };
+  }
 };
 
 export const updateAdminProfile = (profile: any): void => localStorage.setItem('adminProfile', JSON.stringify(profile));
@@ -518,14 +462,16 @@ export const getNoteById = async (id: string): Promise<Note | undefined> => {
 };
 
 export const addNote = async (note: Omit<Note, 'id'>, authorId: string): Promise<void> => {
-    await supabase.from('notes').insert([{ 
+    const { error } = await supabase.from('notes').insert([{ 
         subject: note.subject, 
         title: note.title, 
         content: note.content, 
         upload_date: note.uploadDate, 
         class_level: note.classLevel,
         author_id: authorId,
+        is_archived: false
     }]);
+    if (error) throw error;
 };
 
 export const updateNote = async (id: string, updatedNote: Partial<Note>): Promise<void> => {
@@ -541,7 +487,8 @@ export const updateNote = async (id: string, updatedNote: Partial<Note>): Promis
 };
 
 export const deleteNote = async (id: string): Promise<void> => {
-    await supabase.from('notes').delete().eq('id', id);
+    const { error } = await supabase.from('notes').delete().eq('id', id);
+    if (error) throw error;
 };
 
 export const uploadAvatar = async (userId: string, file: File): Promise<string> => {
@@ -569,15 +516,18 @@ export const getAnnouncements = async (): Promise<Announcement[]> => {
 };
 
 export const addAnnouncement = async (ann: Omit<Announcement, 'id'>): Promise<void> => {
-    await supabase.from('announcements').insert([{ message: ann.message, sender: ann.sender, date: ann.date, class_level: ann.classLevel }]);
+    const { error } = await supabase.from('announcements').insert([{ message: ann.message, sender: ann.sender, date: ann.date, class_level: ann.classLevel }]);
+    if (error) throw error;
 };
 
 export const deleteAnnouncement = async (id: string): Promise<void> => {
-    await supabase.from('announcements').delete().eq('id', id);
+    const { error } = await supabase.from('announcements').delete().eq('id', id);
+    if (error) throw error;
 };
 
 export const updateAnnouncement = async (id: string, message: string): Promise<void> => {
-    await supabase.from('announcements').update({ message }).eq('id', id);
+    const { error } = await supabase.from('announcements').update({ message }).eq('id', id);
+    if (error) throw error;
 };
 
 export const getQuestions = async (): Promise<Question[]> => {
@@ -593,11 +543,13 @@ export const getQuestionsByStudent = async (studentId: string): Promise<Question
 };
 
 export const addQuestion = async (question: Omit<Question, 'id'>): Promise<void> => {
-    await supabase.from('questions').insert([{ student_id: question.studentId, student_name: question.studentName, question_text: question.questionText, question_date: question.questionDate, is_answered: false }]);
+    const { error } = await supabase.from('questions').insert([{ student_id: question.studentId, student_name: question.studentName, question_text: question.questionText, question_date: question.questionDate, is_answered: false }]);
+    if (error) throw error;
 };
 
 export const answerQuestion = async (id: string, answerText: string): Promise<void> => {
-    await supabase.from('questions').update({ is_answered: true, answer_text: answerText, answer_date: new Date().toISOString() }).eq('id', id);
+    const { error } = await supabase.from('questions').update({ is_answered: true, answer_text: answerText, answer_date: new Date().toISOString() }).eq('id', id);
+    if (error) throw error;
 };
 
 export const getAssignments = async (authorId?: string): Promise<Assignment[]> => {
@@ -643,7 +595,8 @@ export const addAssignment = async (assignment: Omit<Assignment, 'id'|'authorId'
         due_date: assignment.dueDate, 
         posted_date: assignment.postedDate, 
         class_level: assignment.classLevel,
-        author_id: authorId
+        author_id: authorId,
+        is_archived: false
     }]);
 };
 

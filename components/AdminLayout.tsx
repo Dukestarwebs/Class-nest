@@ -35,7 +35,6 @@ const AdminLayout: React.FC<{ children?: React.ReactNode }> = ({ children }) => 
     { to: "/admin/assignments", icon: <ClipboardList size={18}/>, text: "Assignments" },
     { to: "/admin/announcements", icon: <Megaphone size={18}/>, text: "Announcements" },
     { to: "/admin/questions", icon: <HelpCircle size={18}/>, text: "Questions" },
-    { to: "/admin/drafts", icon: <FileText size={18}/>, text: "Drafts" },
     { to: "/admin/archive", icon: <Archive size={18}/>, text: "Archive" },
     { to: "/admin/payments", icon: <DollarSign size={18}/>, text: "Payments" },
     { to: "/admin/subscription-fee", icon: <CreditCard size={18}/>, text: "Subscription Fee" },

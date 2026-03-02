@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Save, User, Lock, ShieldAlert, Power, Clock, AlertTriangle } from 'lucide-react';
 import { getAdminProfile, updateAdminProfile, getSystemSettings, updateSystemSetting } from '../../data';
 import { useAuth } from '../../contexts/AuthContext';
+import { supabase } from '../../supabaseClient';
 
 const AdminSettings: React.FC = () => {
   const { user, updateUser } = useAuth();
@@ -103,7 +104,7 @@ const AdminSettings: React.FC = () => {
     }
   };
 
-  const handleUpdatePassword = (e: React.FormEvent) => {
+  const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordError('');
     setPasswordSuccess('');
@@ -126,6 +127,18 @@ const AdminSettings: React.FC = () => {
     }
 
     try {
+        // Update Supabase Auth password
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        if (error) {
+            console.error("Failed to update Supabase password:", error);
+            // If the user is not logged in via Supabase (e.g. local dev fallback), this might fail.
+            // But since we enforced Supabase login for admin, it should work.
+            // However, if the session is expired, it might fail.
+            // Let's proceed with local update but warn? No, better to fail if cloud update fails.
+            setPasswordError(`Failed to update password in cloud: ${error.message}`);
+            return;
+        }
+
         const updatedProfile = {
             ...currentProfile,
             password: newPassword

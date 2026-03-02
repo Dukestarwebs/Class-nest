@@ -61,10 +61,6 @@ const TeacherLayout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
             <Book className="mr-3 h-5 w-5" />
             Manage Notes
           </NavLink>
-          <NavLink to="/teacher/drafts" className={getNavLinkClass} onClick={() => setIsSidebarOpen(false)}>
-            <Clock className="mr-3 h-5 w-5" />
-            Drafts
-          </NavLink>
           <NavLink to="/teacher/assignments" className={getNavLinkClass} onClick={() => setIsSidebarOpen(false)}>
             <ClipboardList className="mr-3 h-5 w-5" />
             Assignments

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Note, Subject, ClassLevel, Draft } from '../../types';
-import { Trash2, History, Send, FileText, Edit, X, Calculator, Book, Binary, Microscope, Globe, BookOpen, Eye, Box, RefreshCw, CheckCircle } from 'lucide-react';
-import { getNotes, addNote, deleteNote, updateNote, uploadNoteImage, saveDraft, deleteDraft } from '../../data';
+import { Note, Subject, ClassLevel } from '../../types';
+import { Trash2, History, Send, FileText, Edit, X, Calculator, Book, Binary, Microscope, Globe, BookOpen, Eye, Box } from 'lucide-react';
+import { getNotes, addNote, deleteNote, updateNote, uploadNoteImage } from '../../data';
 import { useAuth } from '../../contexts/AuthContext';
 import Quill from 'quill';
 
@@ -18,11 +18,6 @@ const UploadNotes: React.FC = () => {
   const [classLevel, setClassLevel] = useState<ClassLevel>('S1');
   const [editingId, setEditingId] = useState<string | null>(null);
   
-  // Draft State
-  const [draftId, setDraftId] = useState<string | null>(null);
-  const [isAutoSaving, setIsAutoSaving] = useState(false);
-  const [lastAutoSaved, setLastAutoSaved] = useState<Date | null>(null);
-
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,21 +25,6 @@ const UploadNotes: React.FC = () => {
   // Refs for Quill
   const editorRef = useRef<HTMLDivElement>(null);
   const quillInstance = useRef<any>(null);
-
-  // Check if we are resuming a draft from navigation state
-  useEffect(() => {
-    const resumeDraft = location.state?.resumeDraft as Draft;
-    if (resumeDraft) {
-        setTitle(resumeDraft.title);
-        setSubject(resumeDraft.subject);
-        setClassLevel(resumeDraft.classLevel);
-        setContent(resumeDraft.content);
-        setDraftId(resumeDraft.id);
-        if (quillInstance.current) {
-            quillInstance.current.root.innerHTML = resumeDraft.content;
-        }
-    }
-  }, [location]);
 
   // Determine available classes
   const availableClasses: ClassLevel[] = user?.role === 'teacher' && user.assignedClasses 
@@ -130,36 +110,6 @@ const UploadNotes: React.FC = () => {
     }
   }, []);
 
-  // Auto-Save Effect
-  useEffect(() => {
-    const timer = setInterval(async () => {
-        const currentContent = quillInstance.current ? quillInstance.current.root.innerHTML : content;
-        const stripped = currentContent.replace(/<[^>]*>/g, '').trim();
-        const hasContent = stripped.length > 5 || currentContent.includes('<img');
-
-        if (user && hasContent && !editingId) {
-            setIsAutoSaving(true);
-            try {
-                const id = await saveDraft({
-                    user_id: user.id,
-                    title: title || 'Untitled Note',
-                    content: currentContent,
-                    subject,
-                    classLevel: classLevel
-                }, draftId || undefined);
-                setDraftId(id);
-                setLastAutoSaved(new Date());
-            } catch (err) {
-                console.error("Auto-save failed", err);
-            } finally {
-                setTimeout(() => setIsAutoSaving(false), 2000);
-            }
-        }
-    }, 5000);
-
-    return () => clearInterval(timer);
-  }, [title, content, subject, classLevel, user, draftId, editingId]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const currentContent = quillInstance.current ? quillInstance.current.root.innerHTML : content;
@@ -201,12 +151,6 @@ const UploadNotes: React.FC = () => {
             };
             await addNote(newNote, user.id);
             setSuccess('Note posted successfully!');
-            
-            // Clean up draft if one existed
-            if (draftId) {
-                await deleteDraft(draftId);
-                setDraftId(null);
-            }
 
             setTitle('');
             if (quillInstance.current) quillInstance.current.setText('');
@@ -215,9 +159,9 @@ const UploadNotes: React.FC = () => {
         
         setTimeout(() => setSuccess(''), 3000);
         await fetchNotes();
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error saving note:", error);
-        setError("Failed to save note.");
+        setError(`Failed to save note: ${error.message || "Unknown error"}`);
     } finally {
         setLoading(false);
     }
@@ -236,7 +180,6 @@ const UploadNotes: React.FC = () => {
 
   const handleCancelEdit = () => {
     setEditingId(null);
-    setDraftId(null);
     setTitle('');
     setContent('');
     if (quillInstance.current) quillInstance.current.setText('');
@@ -286,24 +229,14 @@ const UploadNotes: React.FC = () => {
         <div className="lg:col-span-2 space-y-6">
             <div className="flex justify-between items-center">
                 <h1 className="text-4xl font-poppins font-bold text-text-primary dark:text-white">Manage Notes</h1>
-                {lastAutoSaved && !editingId && (
-                    <div className="flex items-center text-xs text-gray-400">
-                        {isAutoSaving ? (
-                            <RefreshCw className="mr-1 animate-spin text-primary" size={14} />
-                        ) : (
-                            <CheckCircle className="mr-1 text-green-500" size={14} />
-                        )}
-                        {isAutoSaving ? 'Auto-saving...' : `Draft saved at ${lastAutoSaved.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`}
-                    </div>
-                )}
             </div>
             
             <div className={`p-6 rounded-xl shadow-md transition-all duration-200 ${editingId ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800' : 'bg-white dark:bg-gray-800'}`}>
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-200">
-                        {editingId ? 'Edit Note' : draftId ? 'Continuing Draft' : 'Create New Note'}
+                        {editingId ? 'Edit Note' : 'Create New Note'}
                     </h2>
-                    {(editingId || draftId) && (
+                    {editingId && (
                         <button type="button" onClick={handleCancelEdit} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
                             <X size={20} />
                         </button>
@@ -362,9 +295,9 @@ const UploadNotes: React.FC = () => {
                     </div>
 
                     <div className="flex gap-3 pt-8">
-                        {(editingId || draftId) && (
+                        {editingId && (
                              <button type="button" onClick={handleCancelEdit} className="flex-1 bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300 py-3 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors font-bold">
-                                Reset Form
+                                Cancel Edit
                             </button>
                         )}
                         <button type="submit" disabled={loading} className="flex-1 bg-primary text-white py-3 rounded-lg hover:bg-blue-600 transition-colors disabled:bg-primary/50 flex justify-center items-center font-bold">

@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { User } from '../types';
 import { findUserByUsername, getAdminProfile, getUsers, updateUser as updateUserData, getSystemSettings } from '../data';
+import { supabase } from '../supabaseClient';
 
 interface AuthContextType {
   user: User | null;
@@ -28,6 +29,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     const adminProfile = getAdminProfile();
                     const updatedAdmin: User = {
                         ...storedUser,
+                        id: 'a0000000-0000-0000-0000-000000000000', // Ensure correct UUID
                         name: adminProfile.name,
                         username: adminProfile.username,
                         email: adminProfile.email,
@@ -75,17 +77,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Admin check (Username)
     if (normalizedIdentifier === adminProfile.username && pass === adminProfile.password) {
         console.log("Matched admin credentials");
-        const adminUser: User = {
-            id: 'admin-user',
-            name: adminProfile.name,
-            username: adminProfile.username,
-            email: adminProfile.email,
-            role: 'admin',
-            isApproved: true
-        };
-        localStorage.setItem('classNestUser', JSON.stringify(adminUser));
-        setUser(adminUser);
-        return adminUser;
+        
+        try {
+            const { data, error } = await supabase.auth.signInWithPassword({
+                email: adminProfile.email,
+                password: pass,
+            });
+
+            if (error) {
+                console.error("Supabase auth failed:", error);
+                throw new Error(error.message);
+            }
+
+            if (data.user) {
+                const adminUser: User = {
+                    id: data.user.id,
+                    name: adminProfile.name,
+                    username: adminProfile.username,
+                    email: adminProfile.email,
+                    role: 'admin',
+                    isApproved: true
+                };
+                localStorage.setItem('classNestUser', JSON.stringify(adminUser));
+                setUser(adminUser);
+                return adminUser;
+            }
+        } catch (err: any) {
+             console.error("Admin login error:", err);
+             throw new Error(err.message || "Failed to login as admin");
+        }
     }
 
     // Student, Teacher & School Admin check (Username)

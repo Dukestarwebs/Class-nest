@@ -94,16 +94,6 @@ export interface Assignment {
   authorId?: string;
 }
 
-export interface Draft {
-    id: string;
-    user_id: string;
-    subject: Subject;
-    title: string;
-    content: string;
-    classLevel: ClassLevel;
-    updated_at: string;
-}
-
 export interface Announcement {
   id: string;
   message: string;

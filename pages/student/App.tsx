@@ -29,7 +29,6 @@ import TeacherDashboard from '../teacher/Dashboard';
 import Careers from '../Careers';
 import ManageCareers from '../admin/ManageCareers';
 import Archive from '../admin/Archive';
-import Drafts from '../admin/Drafts';
 import StudentSubscription from './Subscription';
 import LiveRoomPage from '../LiveRoomPage';
 import TeacherLiveClass from '../teacher/LiveClass';
@@ -94,7 +93,6 @@ const App: React.FC = () => {
                       <Route path="dashboard" element={<TeacherDashboard />} />
                       <Route path="notes" element={<UploadNotes />} />
                       <Route path="notes/:id" element={<ViewNote />} />
-                      <Route path="drafts" element={<Drafts />} />
                       <Route path="live" element={<TeacherLiveClass />} />
                       <Route path="assignments" element={<ManageAssignments />} />
                       <Route path="*" element={<Navigate to="dashboard" replace />} />
@@ -117,7 +115,6 @@ const App: React.FC = () => {
                     <Route path="assignments" element={<ManageAssignments />} />
                     <Route path="announcements" element={<ManageAnnouncements />} />
                     <Route path="questions" element={<ManageQuestions />} />
-                    <Route path="drafts" element={<Drafts />} />
                     <Route path="archive" element={<Archive />} />
                     <Route path="payments" element={<PaymentTracking />} />
                     <Route path="subscription-fee" element={<ManageSubscription />} />
