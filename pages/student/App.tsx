@@ -209,6 +209,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, role, bypassS
         }
     }, [user, role, bypassSubscription]);
 
+    useEffect(() => {
+        // Cleanup drafts data to prevent crashes
+        localStorage.removeItem('draft_notes');
+        localStorage.removeItem('draft_assignments'); // Just in case
+    }, []);
+
     if (loading || checkingMaintenance || checkingSub) {
         return (
             <div className="flex items-center justify-center h-screen bg-secondary dark:bg-gray-900">
